@@ -1,1 +1,1 @@
-export default function Inventory() { return <h2>Inventory Management</h2>; }
+export default function Inventory() { return <h2>재고</h2>; }

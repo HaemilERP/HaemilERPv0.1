@@ -1,1 +1,1 @@
-export default function Accounting() { return <h2>Accounting Management</h2>; }
+export default function Accounting() { return <h2>정보</h2>; }

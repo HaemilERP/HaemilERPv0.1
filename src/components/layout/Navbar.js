@@ -12,7 +12,7 @@ const Navbar = () => {
       <div className="nav-menu">
         <NavLink to="/dashboard">대시보드</NavLink>
         <NavLink to="/hr">인사</NavLink>
-        <NavLink to="/accounting">회계</NavLink>
+        <NavLink to="/accounting">정보</NavLink>
         <NavLink to="/inventory">재고</NavLink>
       </div>
 

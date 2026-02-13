@@ -1,10 +1,10 @@
 import { useLocation, NavLink } from "react-router-dom";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import "./Layout.css";
 
 const Sidebar = () => {
   const { pathname } = useLocation();
-  const [open, setOpen] = useState("main");
+  const [openSet, setOpenSet] = useState(() => new Set());
 
   const moduleKey = useMemo(() => {
     if (pathname.startsWith("/hr")) return "hr";
@@ -13,10 +13,23 @@ const Sidebar = () => {
     return "dashboard";
   }, [pathname]);
 
+  useEffect(() => {
+    setOpenSet(new Set());
+  }, [moduleKey]);
+
+  const toggleGroup = (group) => {
+    setOpenSet((prev) => {
+      const next = new Set(prev);
+      if (next.has(group)) next.delete(group);
+      else next.add(group);
+      return next;
+    });
+  };
+
   const moduleTitle = {
     dashboard: "대시보드",
     hr: "인사",
-    accounting: "회계",
+    accounting: "정보",
     inventory: "재고",
   }[moduleKey];
 
@@ -33,42 +46,42 @@ const Sidebar = () => {
           { to: "/hr/add", label: "직원등록" },
         ],
       },
-      {
-        group: "org",
-        title: "조직",
-        links: [{ to: "/hr/departments", label: "부서관리" }],
-      },
+      { group: "org", title: "조직", links: [{ to: "/hr/departments", label: "부서관리" }] },
     ],
     accounting: [
       {
-        group: "finance",
-        title: "회계관리",
-        links: [
-          { to: "/accounting/ledger", label: "원장" },
-          { to: "/accounting/report", label: "재무제표" },
-        ],
+        group: "customerinfo",
+        title: "고객사정보",
+        links: [{ to: "/accounting/CustomerInfo", label: "고객사정보" }],
       },
       {
-        group: "tax",
-        title: "세무",
-        links: [{ to: "/accounting/tax", label: "세금관리" }],
+        group: "farminfo",
+        title: "농장정보",
+        links: [{ to: "/accounting/FarmInfo", label: "농장정보" }],
       },
+      {
+        group: "productinfo",
+        title: "제품정보",
+        links: [{ to: "/accounting/ProductInfo", label: "제품정보" }],
+      }
     ],
     inventory: [
       {
-        group: "stock",
-        title: "재고관리",
-        links: [
-          { to: "/inventory/list", label: "재고목록" },
-          { to: "/inventory/inbound", label: "입고관리" },
-        ],
+        group: "egg",
+        title: "원란재고",
+        links: [{ to: "/inventory/EggInventory", label: "원란재고" }],
       },
       {
-        group: "outbound",
-        title: "출고",
-        links: [{ to: "/inventory/outbound", label: "출고관리" }],
+        group: "goods",
+        title: "제품재고",
+        links: [{ to: "/inventory/GoodsInventory", label: "제품재고" }],
       },
-    ],
+      {
+        group: "materials",
+        title: "부자재재고",
+        links: [{ to: "/inventory/MaterialsInventory", label: "부자재재고" }],
+      },
+    ]
   };
 
   const sections = itemsByModule[moduleKey] || [];
@@ -77,27 +90,28 @@ const Sidebar = () => {
     <aside className="sidebar">
       <div className="sidebar-header">{moduleTitle} 메뉴</div>
 
-      {sections.map((sec) => (
-        <div className="sidebar-section" key={sec.group}>
-          <div
-            className="sidebar-title"
-            onClick={() => setOpen(open === sec.group ? "" : sec.group)}
-          >
-            <span>{sec.title}</span>
-            <span style={{ opacity: 0.7 }}>{open === sec.group ? "−" : "+"}</span>
-          </div>
+      {sections.map((sec) => {
+        const isOpen = openSet.has(sec.group);
 
-          {open === sec.group && (
-            <div className="sidebar-links">
-              {sec.links.map((l) => (
-                <NavLink key={l.to} to={l.to}>
-                  {l.label}
-                </NavLink>
-              ))}
+        return (
+          <div className="sidebar-section" key={sec.group}>
+            <div className="sidebar-title" onClick={() => toggleGroup(sec.group)}>
+              <span>{sec.title}</span>
+              <span style={{ opacity: 0.7 }}>{isOpen ? "−" : "+"}</span>
             </div>
-          )}
-        </div>
-      ))}
+
+            {isOpen && (
+              <div className="sidebar-links">
+                {sec.links.map((l) => (
+                  <NavLink key={l.to} to={l.to}>
+                    {l.label}
+                  </NavLink>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
     </aside>
   );
 };

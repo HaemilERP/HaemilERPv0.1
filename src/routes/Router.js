@@ -14,13 +14,13 @@ import HREmployees from "../pages/hr/Employees";
 import HRAdd from "../pages/hr/AddEmployee";
 import HRDepartments from "../pages/hr/Departments";
 
-import Ledger from "../pages/accounting/Ledger";
-import FinanceReport from "../pages/accounting/Report";
-import Tax from "../pages/accounting/Tax";
+import ACustomerInfo from "../pages/accounting/CustomerInfo";
+import AFarmInfo from "../pages/accounting/FarmInfo";
+import AProductInfo from "../pages/accounting/ProductInfo";
 
-import StockList from "../pages/inventory/StockList";
-import Inbound from "../pages/inventory/Inbound";
-import Outbound from "../pages/inventory/Outbound";
+import Egg from "../pages/inventory/EggInventory";
+import Goods from "../pages/inventory/GoodsInventory";
+import Materials from "../pages/inventory/MaterialsInventory";
 
 const Router = () => {
   return (
@@ -49,15 +49,15 @@ const Router = () => {
 
             {/* Accounting module */}
             <Route path="/accounting" element={<Accounting />} />
-            <Route path="/accounting/ledger" element={<Ledger />} />
-            <Route path="/accounting/report" element={<FinanceReport />} />
-            <Route path="/accounting/tax" element={<Tax />} />
+            <Route path="/accounting/CustomerInfo" element={<ACustomerInfo />} />
+            <Route path="/accounting/FarmInfo" element={<AFarmInfo />} />
+            <Route path="/accounting/ProductInfo" element={<AProductInfo />} />
 
             {/* Inventory module */}
             <Route path="/inventory" element={<Inventory />} />
-            <Route path="/inventory/list" element={<StockList />} />
-            <Route path="/inventory/inbound" element={<Inbound />} />
-            <Route path="/inventory/outbound" element={<Outbound />} />
+            <Route path="/inventory/EggInventory" element={<Egg />} />
+            <Route path="/inventory/GoodsInventory" element={<Goods />} />
+            <Route path="/inventory/MaterialsInventory" element={<Materials />} />
 
             {/* default */}
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
