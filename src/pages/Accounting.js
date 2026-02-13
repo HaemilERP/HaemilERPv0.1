@@ -1,0 +1,1 @@
+export default function Accounting() { return <h2>Accounting Management</h2>; }

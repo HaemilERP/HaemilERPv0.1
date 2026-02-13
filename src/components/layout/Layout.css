@@ -1,0 +1,170 @@
+/* 상단 냅바 */
+.top-navbar {
+  height: 60px;
+  background: linear-gradient(135deg,rgb(0, 169, 144), #009781);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  box-shadow: 0 10px 25px rgba(0,0,0,0.18);
+}
+
+.nav-logo {
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+.nav-menu {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.nav-menu a {
+  color: #cbd5e1;
+  text-decoration: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  transition: 0.15s ease;
+  font-size: 14px;
+}
+
+.nav-menu a:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.08);
+}
+
+.nav-menu a.active {
+  color: #fff;
+  background: rgba(255,255,255,0.12);
+  font-weight: 700;
+}
+
+.nav-right {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.user-pill {
+  font-size: 12px;
+  color: #fff;
+  background: rgba(255,255,255,0.12);
+  padding: 6px 10px;
+  border-radius: 999px;
+}
+
+.logout-btn {
+  background: #009781;
+  border: none;
+  padding: 8px 12px;
+  color: white;
+  cursor: pointer;
+  border-radius: 8px;
+  transition: 0.15s ease;
+}
+
+.logout-btn:hover {
+  color: #fff;
+  background: rgba(255,255,255,0.12);
+}
+
+/* 메인 레이아웃 */
+.main-container {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.main-content {
+  flex: 1;
+  min-height: 0;
+}
+
+/* 사이드 메뉴와 콘텐츠 */
+.page-layout {
+  display: flex;
+  height: 100%;
+  min-height: 0;
+}
+
+.sidebar {
+  width: 260px;
+  background: #009781;
+  color: white;
+  padding: 14px 10px;
+  border-right: 1px solid rgba(255,255,255,0.06);
+}
+
+.sidebar-header {
+  padding: 10px 12px;
+  color: white;
+  font-weight: 700;
+  font-size: 13px;
+  opacity: 0.9;
+}
+
+.sidebar-section {
+  margin-top: 10px;
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.sidebar-title {
+  padding: 12px 12px;
+  cursor: pointer;
+  font-weight: 700;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: rgba(255,255,255,0.02);
+}
+
+.sidebar-title:hover {
+  background: rgba(255,255,255,0.06);
+}
+
+.sidebar-links {
+  display: flex;
+  flex-direction: column;
+  padding: 6px 12px 10px 12px;
+  background: rgba(255,255,255,0.02);
+}
+
+.sidebar-links a {
+  padding: 8px 8px;
+  text-decoration: none;
+  color: white;
+  border-radius: 8px;
+  transition: 0.15s ease;
+  font-size: 13px;
+}
+
+.sidebar-links a:hover {
+  color: white;
+  background: rgba(255,255,255,0.08);
+}
+
+.sidebar-links a.active {
+  color: white;
+  background: rgba(255,255,255,0.12);
+  font-weight: 700;
+}
+
+.page-content {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  padding: 18px;
+  background: white;
+  overflow: auto;
+}
+
+/* 카드 레이아웃 */ 
+.page-card {
+  background: white;
+  border-radius: 14px;
+  padding: 18px;
+  box-shadow: 0 12px 30px rgba(2, 6, 23, 0.08);
+}

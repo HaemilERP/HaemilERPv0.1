@@ -1,0 +1,1 @@
+export default function Employee() { return <h2>Employee Management</h2>; }
