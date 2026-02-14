@@ -1,19 +1,13 @@
 import { Outlet, useLocation } from "react-router-dom";
 import Navbar from "./Navbar";
-import "./Layout.css";
 
-const MainLayout = () => {
+export default function MainLayout() {
   const { pathname } = useLocation();
-  const showNavbar = pathname !== "/";
-
+  const isLogin = pathname === "/";
   return (
-    <div className="main-container">
-      {showNavbar && <Navbar />}
-      <div className="main-content">
-        <Outlet />
-      </div>
+    <div>
+      {!isLogin && <Navbar />}
+      <Outlet />
     </div>
   );
-};
-
-export default MainLayout;
+}

@@ -1,8 +1,1 @@
-export default function 고객사정보() {
-  return (
-    <div className="page-card">
-      <h2>고객사정보</h2>
-      <p>고객사정보 페이지입니다.</p>
-    </div>
-  );
-}
+export default function CustomerInfo(){return (<div className="page-card"><h2>고객사정보</h2><p style={{color:"#64748b"}}>추후 구현</p></div>);}

@@ -2,15 +2,13 @@ import { Outlet } from "react-router-dom";
 import Sidebar from "./Sidebar";
 import "./Layout.css";
 
-const PageLayout = () => {
+export default function PageLayout() {
   return (
-    <div className="page-layout">
+    <div className="app-shell">
       <Sidebar />
-      <div className="page-content">
+      <main className="content">
         <Outlet />
-      </div>
+      </main>
     </div>
   );
-};
-
-export default PageLayout;
+}

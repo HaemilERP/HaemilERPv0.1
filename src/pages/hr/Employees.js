@@ -1,8 +1,1 @@
-export default function 원란재고() {
-  return (
-    <div className="page-card">
-      <h2>원란재고</h2>
-      <p>인사  직원등록 페이지입니다.</p>
-    </div>
-  );
-}
+export default function Employees(){return (<div className="page-card"><h2>직원목록</h2><p style={{color:"#64748b"}}>직원목록</p></div>);}

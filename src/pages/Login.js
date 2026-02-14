@@ -1,47 +1,37 @@
-
-import { useAuth } from "../context/AuthContext";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useAuth } from "../context/AuthContext";
 import "./Login.css";
 
-const Login = () => {
-  const { login } = useAuth();
+export default function Login() {
+  const { login, authLoading } = useAuth();
   const navigate = useNavigate();
+  const [form, setForm] = useState({ username: "", password: "" });
+  const [error, setError] = useState("");
 
-  const handleLogin = (e) => {
+  const onChange = (e) => setForm((p) => ({ ...p, [e.target.name]: e.target.value }));
+  const onSubmit = async (e) => {
     e.preventDefault();
-    login();
-    navigate("/dashboard");
+    setError("");
+    const { ok, message } = await login(form);
+    if (!ok) return setError(message);
+    navigate("/dashboard", { replace: true });
   };
 
   return (
     <div className="login-wrapper">
       <div className="login-card">
-        <h2 className="login-title">Haemil ERP</h2>
-
-        <form onSubmit={handleLogin} className="login-form">
-          <input
-            type="text"
-            placeholder="ID"
-            className="login-input"
-          />
-
-          <input
-            type="password"
-            placeholder="Password"
-            className="login-input"
-          />
-
-          <button type="submit" className="login-button">
-            Sign In
+        <h2 className="login-title">Haemeel ERP</h2>
+        <form className="login-form" onSubmit={onSubmit}>
+          <input className="login-input" name="username" value={form.username} onChange={onChange} placeholder="Username" />
+          <input className="login-input" type="password" name="password" value={form.password} onChange={onChange} placeholder="Password" />
+          {error && <div style={{ color: "#ef4444", fontSize: 13 }}>{error}</div>}
+          <button className="login-button" type="submit" disabled={authLoading}>
+            {authLoading ? "Signing In..." : "Sign In"}
           </button>
         </form>
-
-        <p className="login-footer">
-          © 2026 Haemil Co., Ltd.
-        </p>
+        <p className="login-footer">© 2026 Haemil Co., Ltd.</p>
       </div>
     </div>
   );
-};
-
-export default Login;
+}

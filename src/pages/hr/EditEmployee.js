@@ -1,0 +1,1 @@
+export default function EditEmployee(){return (<div className="page-card"><h2>직원편집</h2><p style={{color:"#64748b"}}>직원편집</p></div>);}

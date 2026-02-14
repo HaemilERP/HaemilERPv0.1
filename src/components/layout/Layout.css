@@ -162,6 +162,17 @@
   overflow: auto;
 }
 
+.app-shell {
+  display: flex;
+  min-height: calc(100vh - 60px);
+}
+
+.content {
+  flex: 1;
+  padding: 24px;         
+  background: #f4f6fb;   
+}
+
 /* 카드 레이아웃 */ 
 .page-card {
   background: white;
