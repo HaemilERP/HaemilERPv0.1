@@ -35,6 +35,7 @@ export default function Router() {
             <Route path="/hr/employees" element={<Employees />} />
             <Route path="/hr/add" element={<AddEmployee />} />
             <Route path="/hr/edit" element={<EditEmployee />} />
+            <Route path="/hr/edit/:id" element={<EditEmployee />} />
             <Route path="/hr/departments" element={<Departments />} />
 
             <Route path="/accounting" element={<Accounting />} />

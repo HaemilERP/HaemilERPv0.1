@@ -29,7 +29,7 @@ export default function Sidebar() {
   const itemsByModule = {
     dashboard: [{ group: "main", title: "개요", links: [{ to: "/dashboard", label: "대시보드 홈" }] }],
     hr: [
-      { group: "employee", title: "직원관리", links: [{ to: "/hr/employees", label: "직원목록" }, { to: "/hr/edit", label: "직원편집" }, { to: "/hr/add", label: "직원등록" }] },
+      { group: "employee", title: "직원관리", links: [{ to: "/hr/employees", label: "직원목록" }, { to: "/hr/add", label: "직원등록" }, { to: "/hr/edit", label: "직원편집" }] },
       { group: "org", title: "조직", links: [{ to: "/hr/departments", label: "부서관리" }] },
     ],
     accounting: [
