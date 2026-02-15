@@ -7,36 +7,45 @@ const AuthContext = createContext();
 
 const normalizeUser = (me) => {
   if (!me) return null;
-  return { ...me, isAdmin: me?.role === "ADMIN" };
+  const role = me?.role ? String(me.role).toUpperCase() : me?.role;
+  return { ...me, role, isAdmin: role === "ADMIN" };
 };
 
 export const AuthProvider = ({ children }) => {
   const initial = useMemo(() => getInitialAuthState(), []);
+
   const [isAuthenticated, setIsAuthenticated] = useState(initial.isAuthenticated);
   const [user, setUser] = useState(initial.user);
   const [authLoading, setAuthLoading] = useState(false);
 
   // ✅ 토큰이 있으면 /me로 role 확정 (새로고침/직접 URL 진입에도 ADMIN 유지)
   useEffect(() => {
+    let mounted = true;
+
     const boot = async () => {
       if (!initial.isAuthenticated) return;
 
       setAuthLoading(true);
       try {
         const meRes = await api.get(API_PATHS.me);
+        if (!mounted) return;
         setUser(normalizeUser(meRes.data));
         setIsAuthenticated(true);
       } catch (e) {
         // 토큰이 유효하지 않으면 로그아웃 처리
         logoutRequest();
+        if (!mounted) return;
         setUser(null);
         setIsAuthenticated(false);
       } finally {
-        setAuthLoading(false);
+        if (mounted) setAuthLoading(false);
       }
     };
 
     boot();
+    return () => {
+      mounted = false;
+    };
   }, [initial.isAuthenticated]);
 
   // ✅ 로그인 직후에도 무조건 /me로 유저 확정

@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { deleteUser, listEmployees, updateUserPassword } from "../../services/userApi";
+import { getApiErrorMessage } from "../../utils/helpers";
 
 export default function EditEmployee() {
   const { user, authLoading } = useAuth();
   const { id } = useParams();
   const navigate = useNavigate();
 
-  const isAdmin = user?.isAdmin === true || user?.role === "ADMIN";
+  const isAdmin = Boolean(user?.isAdmin);
   const myId = user?.id;
 
   const targetId = useMemo(() => {
@@ -19,6 +20,9 @@ export default function EditEmployee() {
   }, [id, isAdmin, myId]);
 
   const isSelf = targetId != null && myId != null && targetId === myId;
+
+  // ✅ "프론트에서 권한으로 막지 말고" 서버 응답을 그대로 보여주기 위해
+  // canChangePassword는 UI disable 용도로만 유지 (디자인 유지 목적)
   const canChangePassword = Boolean(isAdmin || isSelf);
 
   const [targetUser, setTargetUser] = useState(null);
@@ -61,7 +65,7 @@ export default function EditEmployee() {
         const found = list.find((u) => Number(u?.id) === Number(targetId));
         if (mounted) setTargetUser(found || { id: targetId, username: "", role: "" });
       } catch (e) {
-        if (mounted) setError(e?.response?.data?.detail || e?.response?.data?.message || e?.message || "직원 정보 조회 실패");
+        if (mounted) setError(getApiErrorMessage(e));
       } finally {
         if (mounted) setLoading(false);
       }
@@ -76,27 +80,26 @@ export default function EditEmployee() {
     setError("");
     setSuccess("");
 
-    if (!canChangePassword) {
-      setError("본인 계정의 비밀번호만 변경할 수 있습니다.");
+    // ✅ 길이 검증 로직 (8자 기준)
+    const nextPw = (pw1 || "").trim();
+    if (!nextPw || nextPw.length < 8) {
+      setError("비밀번호는 최소 8자 이상이어야 합니다.");
       return;
     }
-    if (!pw1 || pw1.length < 4) {
-      setError("새 비밀번호를 입력해주세요. (최소 4자)");
-      return;
-    }
-    if (pw1 !== pw2) {
+    if (nextPw !== pw2) {
       setError("비밀번호 확인이 일치하지 않습니다.");
       return;
     }
 
     setSaving(true);
     try {
-      await updateUserPassword(targetId, pw1);
+      await updateUserPassword(targetId, nextPw);
       setPw1("");
       setPw2("");
       setSuccess("비밀번호가 변경되었습니다.");
     } catch (e2) {
-      setError(e2?.response?.data?.detail || e2?.response?.data?.message || e2?.message || "비밀번호 변경 실패");
+      // ✅ ADMIN과 동일: 서버 에러 메시지(detail/message) 그대로 표시
+      setError(getApiErrorMessage(e2));
     } finally {
       setSaving(false);
     }
@@ -113,7 +116,7 @@ export default function EditEmployee() {
       await deleteUser(targetId);
       navigate("/hr/employees");
     } catch (e) {
-      setError(e?.response?.data?.detail || e?.response?.data?.message || e?.message || "삭제 실패");
+      setError(getApiErrorMessage(e));
     }
   };
 
@@ -133,7 +136,7 @@ export default function EditEmployee() {
             padding: "10px 12px",
             borderRadius: 10,
             border: "none",
-            background: "#009781",
+            background: "#00a990",
             color: "#fff",
             cursor: "pointer",
           }}
@@ -144,13 +147,13 @@ export default function EditEmployee() {
     );
   }
 
-  // MANAGER가 남의 계정을 보려고 하면 안내 + 본인으로 이동 버튼
+  // MANAGER가 남의 계정을 보려고 하면 안내 + 본인으로 이동 버튼 (기존 UI 유지)
   if (!isAdmin && targetId != null && myId != null && targetId !== myId) {
     return (
       <div className="page-card">
         <h2 style={{ margin: 0 }}>권한 없음</h2>
         <p style={{ color: "#64748b", marginTop: 10 }}>
-          매니저는 <b>본인 계정</b>의 비밀번호만 변경할 수 있습니다.
+          매니저는 본인 계정의 비밀번호만 변경할 수 있습니다.
         </p>
         <div style={{ display: "flex", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
           <button
@@ -230,12 +233,22 @@ export default function EditEmployee() {
 
         <div style={{ display: "grid", gap: 6, marginTop: 6 }}>
           <label>New Password</label>
-          <input type="password" value={pw1} onChange={(e) => setPw1(e.target.value)} disabled={!canChangePassword || authLoading} />
+          <input
+            type="password"
+            value={pw1}
+            onChange={(e) => setPw1(e.target.value)}
+            disabled={!canChangePassword || authLoading}
+          />
         </div>
 
         <div style={{ display: "grid", gap: 6 }}>
           <label>Confirm Password</label>
-          <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} disabled={!canChangePassword || authLoading} />
+          <input
+            type="password"
+            value={pw2}
+            onChange={(e) => setPw2(e.target.value)}
+            disabled={!canChangePassword || authLoading}
+          />
         </div>
 
         <button

@@ -1,5 +1,5 @@
-export const API_BASE_URL =
-  process.env.REACT_APP_API_BASE_URL || "/api";
+// API base URL (all requests go to this backend)
+export const API_BASE_URL = "http://34.64.146.213:8000/api";
 
 export const API_PATHS = {
   login: "/accounts/login/",

@@ -23,11 +23,11 @@ export default function Login() {
       <div className="login-card">
         <h2 className="login-title">Haemeel ERP</h2>
         <form className="login-form" onSubmit={onSubmit}>
-          <input className="login-input" name="username" value={form.username} onChange={onChange} placeholder="Username" />
+          <input className="login-input" name="username" value={form.username} onChange={onChange} placeholder="ID" />
           <input className="login-input" type="password" name="password" value={form.password} onChange={onChange} placeholder="Password" />
           {error && <div style={{ color: "#ef4444", fontSize: 13 }}>{error}</div>}
           <button className="login-button" type="submit" disabled={authLoading}>
-            {authLoading ? "Signing In..." : "Sign In"}
+            {authLoading ? "로그인 중..." : "로그인"}
           </button>
         </form>
         <p className="login-footer">© 2026 Haemil Co., Ltd.</p>

@@ -3,6 +3,7 @@ import Login from "../pages/Login";
 import MainLayout from "../components/layout/MainLayout";
 import PageLayout from "../components/layout/PageLayout";
 import ProtectedRoute from "../components/auth/ProtectedRoute";
+import AdminRoute from "../components/auth/AdminRoute";
 
 import Dashboard from "../pages/Dashboard";
 import Employee from "../pages/Employee";
@@ -33,7 +34,7 @@ export default function Router() {
 
             <Route path="/hr" element={<Employee />} />
             <Route path="/hr/employees" element={<Employees />} />
-            <Route path="/hr/add" element={<AddEmployee />} />
+            <Route path="/hr/add" element={<AdminRoute message="직원 등록은 관리자만 가능합니다."><AddEmployee /></AdminRoute>} />
             <Route path="/hr/edit" element={<EditEmployee />} />
             <Route path="/hr/edit/:id" element={<EditEmployee />} />
             <Route path="/hr/departments" element={<Departments />} />

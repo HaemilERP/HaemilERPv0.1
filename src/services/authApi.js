@@ -7,17 +7,27 @@ export async function loginRequest({ username, password }) {
   const { access, refresh } = res.data || {};
   if (!access) throw new Error("No access token returned from server.");
   storeTokens({ access, refresh });
-
-  const meRes = await api.get(API_PATHS.me);
-  const user = meRes.data;
-  return { user: { ...user, isAdmin: user?.role === "ADMIN" } };
+  return res.data;
 }
 
-export function logoutRequest() { clearTokens(); }
+export function logoutRequest() {
+  clearTokens();
+}
 
 export function getInitialAuthState() {
   const { access } = getStoredTokens();
   if (!access) return { isAuthenticated: false, user: null };
+
   const claims = safeDecodeJwt(access);
-  return { isAuthenticated: true, user: { username: claims?.username || "user", role: claims?.role, isAdmin: claims?.role === "ADMIN", claims } };
+  const role = claims?.role ? String(claims.role).toUpperCase() : undefined;
+
+  return {
+    isAuthenticated: true,
+    user: {
+      username: claims?.username || "user",
+      role,
+      isAdmin: role === "ADMIN",
+      claims,
+    },
+  };
 }

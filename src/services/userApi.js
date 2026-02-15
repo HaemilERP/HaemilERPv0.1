@@ -1,5 +1,6 @@
 import { api } from "./apiClient";
 import { API_PATHS } from "../config/api";
+import { unwrapList } from "../utils/helpers";
 
 export async function signupUser(payload) {
   const res = await api.post(API_PATHS.signup, payload);
@@ -8,8 +9,7 @@ export async function signupUser(payload) {
 
 export async function listEmployees() {
   const res = await api.get(API_PATHS.accountsList);
-  // 백엔드가 {results: []} 형태로 줄 수도 있어서 방어
-  return Array.isArray(res.data) ? res.data : res.data?.results || [];
+  return unwrapList(res.data);
 }
 
 export async function updateUserPassword(id, newPassword) {
@@ -30,10 +30,11 @@ export async function updateUserPassword(id, newPassword) {
       try {
         const res2 = await api.put(API_PATHS.userPassword(id), body);
         return res2.data;
-      } catch (e2) {
+      } catch {
         // continue
       }
     }
+
     throw e;
   }
 }

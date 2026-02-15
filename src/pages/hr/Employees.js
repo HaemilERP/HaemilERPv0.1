@@ -1,14 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
 import { deleteUser, listEmployees } from "../../services/userApi";
+import { getApiErrorMessage } from "../../utils/helpers";
 
 export default function Employees() {
   const { user, authLoading } = useAuth();
   const navigate = useNavigate();
 
-  const isAdmin = user?.isAdmin === true || user?.role === "ADMIN";
-
+  const isAdmin = Boolean(user?.isAdmin);
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -18,28 +18,24 @@ export default function Employees() {
 
   const [sort, setSort] = useState({ key: "id", dir: "asc" });
 
-  const fetchRows = async () => {
+  const [fieldFocus, setFieldFocus] = useState(false);
+
+  const fetchRows = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const data = await listEmployees();
-      setRows(data);
+      const data = await listEmployees(); // ✅ accounts/accounts GET
+      setRows(Array.isArray(data) ? data : []);
     } catch (e) {
-      setError(
-        e?.response?.data?.detail ||
-          e?.response?.data?.message ||
-          e?.message ||
-          "목록 조회 실패"
-      );
+      setError(getApiErrorMessage(e, "목록 조회 실패"));
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    fetchRows();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    fetchRows(); // 최초 1회 로드
+  }, [fetchRows]);
 
   const filtered = useMemo(() => {
     const keyword = q.trim().toLowerCase();
@@ -52,7 +48,11 @@ export default function Employees() {
 
       if (field === "USERNAME") return username.includes(keyword);
       if (field === "ROLE") return role.includes(keyword);
-      return idStr.includes(keyword) || username.includes(keyword) || role.includes(keyword);
+      return (
+        idStr.includes(keyword) ||
+        username.includes(keyword) ||
+        role.includes(keyword)
+      );
     });
   }, [rows, q, field]);
 
@@ -93,18 +93,77 @@ export default function Employees() {
 
     try {
       await deleteUser(id);
+      // ✅ 삭제 직후에도 서버에서 다시 갱신하고 싶으면 fetchRows()로 교체 가능
       setRows((prev) => prev.filter((r) => r?.id !== id));
     } catch (e) {
-      alert(
-        e?.response?.data?.detail ||
-          e?.response?.data?.message ||
-          e?.message ||
-          "삭제 실패"
-      );
+      alert(getApiErrorMessage(e, "삭제 실패"));
     }
   };
 
   const canEditRow = (row) => isAdmin || (user?.id != null && row?.id === user.id);
+
+  // --- UI 스타일(이전 요청 유지) ---
+  const borderGray = "#e2e8f0";
+  const focusRing = "0 0 0 4px rgba(15, 23, 42, 0.12)";
+
+  const fieldSelectStyle = {
+    height: 40,
+    borderRadius: 12,
+    padding: "0 14px",
+    background: "white",
+    outline: "none",
+    minWidth: 120,
+    boxSizing: "border-box",
+    border: `1px solid ${fieldFocus ? "#0f172a" : borderGray}`,
+    boxShadow: fieldFocus ? focusRing : "none",
+    transition: "border-color 120ms ease, box-shadow 120ms ease",
+    cursor: "pointer",
+  };
+
+  const searchInputStyle = {
+    height: 40,
+    width: 330,
+    borderRadius: 12,
+    padding: "0 14px",
+    border: `1px solid ${borderGray}`,
+    background: "white",
+    outline: "none",
+    boxSizing: "border-box",
+    transition: "border-color 120ms ease, box-shadow 120ms ease",
+  };
+
+  const searchBtnStyle = {
+    height: 40,
+    padding: "0 16px",
+    borderRadius: 12,
+    border: "none",
+    background: "#00a990",
+    color: "white",
+    cursor: "pointer",
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    whiteSpace: "nowrap",
+  };
+
+  const addBtnSecondaryStyle = {
+    height: 40,
+    padding: "0 16px",
+    borderRadius: 12,
+    border: "none",
+    background: "#e2e8f0",
+    color: "#0f172a",
+    fontWeight: 900,
+    cursor: authLoading ? "not-allowed" : "pointer",
+    boxShadow: "none",
+    opacity: authLoading ? 0.9 : 1,
+    whiteSpace: "nowrap",
+  };
+
+  // ✅ 검색 클릭/엔터 시마다 서버에서 다시 목록 갱신
+  const onSearch = async () => {
+    await fetchRows();
+  };
 
   return (
     <div className="page-card">
@@ -125,60 +184,36 @@ export default function Employees() {
           <select
             value={field}
             onChange={(e) => setField(e.target.value)}
-            style={{
-              height: 40,
-              borderRadius: 12,
-              padding: "0 12px",
-              border: "1px solid #e5e7eb",
-              background: "white",
-              boxShadow: "0 6px 18px rgba(2,6,23,0.06)",
-            }}
+            style={fieldSelectStyle}
+            onFocus={() => setFieldFocus(true)}
+            onBlur={() => setFieldFocus(false)}
           >
             <option value="ALL">전체</option>
             <option value="USERNAME">아이디</option>
             <option value="ROLE">권한</option>
           </select>
 
-          <div
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              background: "white",
-              border: "1px solid #e5e7eb",
-              borderRadius: 14,
-              padding: "0 10px",
-              height: 40,
-              boxShadow: "0 6px 18px rgba(2,6,23,0.06)",
-              minWidth: 320,
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="검색어"
+            style={searchInputStyle}
+            onFocus={(e) => {
+              e.currentTarget.style.borderColor = "#0f172a";
+              e.currentTarget.style.boxShadow = focusRing;
             }}
-          >
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="검색어를 입력하세요"
-              style={{ border: "none", outline: "none", width: "100%" }}
-            />
-            <button
-              type="button"
-              onClick={() => {}}
-              style={{
-                height: 32,
-                padding: "0 14px",
-                borderRadius: 10,
-                border: "none",
-                background: "#009781",
-                color: "white",
-                cursor: "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                whiteSpace: "nowrap",
-              }}
-            >
-              검색
-            </button>
-          </div>
+            onBlur={(e) => {
+              e.currentTarget.style.borderColor = borderGray;
+              e.currentTarget.style.boxShadow = "none";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") onSearch();
+            }}
+          />
+
+          <button type="button" onClick={onSearch} style={searchBtnStyle}>
+            검색
+          </button>
         </div>
 
         {isAdmin && (
@@ -186,16 +221,7 @@ export default function Employees() {
             type="button"
             onClick={() => navigate("/hr/add")}
             disabled={authLoading}
-            style={{
-              height: 40,
-              padding: "0 16px",
-              borderRadius: 12,
-              border: "none",
-              background: "#009781",
-              color: "white",
-              cursor: "pointer",
-              boxShadow: "0 10px 20px rgba(2,6,23,0.10)",
-            }}
+            style={addBtnSecondaryStyle}
           >
             + 데이터 추가
           </button>
@@ -221,7 +247,7 @@ export default function Employees() {
             <tr style={{ background: "#f8fafc", color: "#334155" }}>
               <th
                 onClick={() => toggleSort("id")}
-                style={{ textAlign: "left", padding: "14px 16px", cursor: "pointer", fontWeight: 700 }}
+                style={{ textAlign: "center", padding: "14px 16px", cursor: "pointer", fontWeight: 700 }}
               >
                 번호 <span style={{ opacity: 0.5, fontSize: 12 }}>▲▼</span>
               </th>
@@ -253,7 +279,7 @@ export default function Employees() {
 
                 return (
                   <tr key={r?.id} style={{ borderTop: "1px solid #eef2f7" }}>
-                    <td style={{ padding: "18px 16px", borderTop: "1px solid #eef2f7", fontWeight: 700 }}>
+                    <td style={{ padding: "18px 16px", borderTop: "1px solid #eef2f7", fontWeight: 700, textAlign: "center" }}>
                       {r?.id}
                     </td>
                     <td style={{ padding: "18px 16px", borderTop: "1px solid #eef2f7" }}>
@@ -305,7 +331,7 @@ export default function Employees() {
                           !isAdmin
                             ? "삭제는 관리자만 가능합니다."
                             : user?.id === r?.id
-                              ? "본인 계정은 삭제할 수 없습니다."
+                              ? "관리자 계정은 삭제할 수 없습니다."
                               : ""
                         }
                       >
