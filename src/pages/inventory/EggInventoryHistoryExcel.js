@@ -1,117 +1,122 @@
-import { useMemo, useState } from "react";
+import { useCallback } from "react";
 import {
   downloadEggLotHistoryMemoTemplate,
   parseHistoryMemoAOA,
   readFirstSheetAOA,
 } from "../../utils/excel";
 import { patchEggLotHistory } from "../../services/inventoryApi";
+import useExcelBatchUpload from "../../hooks/useExcelBatchUpload";
+import "../accounting/AccountingTable.css";
 
 export default function EggInventoryHistoryExcel() {
-  const [file, setFile] = useState(null);
-  const [parsed, setParsed] = useState({ rows: [], errors: [] });
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  const uploadRow = useCallback(async (row) => {
+    await patchEggLotHistory(row.id, { memo: row.memo });
+  }, []);
 
-  const preview = useMemo(() => parsed.rows.slice(0, 20), [parsed.rows]);
-
-  async function onPick(e) {
-    const f = e.target.files?.[0];
-    setFile(f || null);
-    setParsed({ rows: [], errors: [] });
-    setMsg("");
-    if (!f) return;
-
-    try {
-      const aoa = await readFirstSheetAOA(f);
-      setParsed(parseHistoryMemoAOA(aoa));
-    } catch (err) {
-      setMsg(err?.message || "엑셀 파일을 읽지 못했습니다.");
-    }
-  }
-
-  async function onUpload() {
-    if (busy) return;
-    if (!parsed.rows.length) {
-      setMsg("업로드할 데이터가 없습니다.");
-      return;
-    }
-
-    const valid = parsed.rows.filter((r) => !r.__invalid);
-    if (!valid.length) {
-      setMsg("유효한 행이 없습니다. 오류를 먼저 수정해주세요.");
-      return;
-    }
-
-    setBusy(true);
-    setMsg("");
-
-    let okCount = 0;
-    let failCount = 0;
-
-    for (const r of valid) {
-      try {
-        await patchEggLotHistory(r.id, { memo: r.memo });
-        okCount += 1;
-      } catch {
-        failCount += 1;
-      }
-    }
-
-    setBusy(false);
-    setMsg(`업로드 완료: 성공 ${okCount}건 / 실패 ${failCount}건`);
-  }
+  const {
+    file,
+    parsed,
+    loading,
+    progress,
+    result,
+    validRows,
+    invalidRows,
+    onPickFile,
+    onUpload,
+  } = useExcelBatchUpload({
+    parseAOA: parseHistoryMemoAOA,
+    readAOA: readFirstSheetAOA,
+    uploadRow,
+    confirmMessage: (validCount, invalidCount) =>
+      `총 ${validCount}건을 업로드할까요? (오류 행 ${invalidCount}건)`,
+    emptyValidMessage: "업로드할 유효 데이터가 없습니다.",
+    uploadFailMessage: "업로드 실패",
+    readFailMessage: "엑셀 파일을 읽지 못했습니다.",
+  });
 
   return (
     <div className="page-card">
-      <h2>계란재고 변경내역 엑셀입력</h2>
-      <p style={{ color: "#64748b" }}>
-        변경내역은 자동 생성되므로, 이 화면에서는 <b>메모(코멘트)</b>만 일괄 수정합니다.
+      <h2>계란재고 변경내역 엑셀 입력</h2>
+      <p style={{ color: "#64748b", marginTop: "var(--sp-6)" }}>
+        변경내역은 자동 생성되며 이 화면에서는 메모만 일괄 수정합니다.
       </p>
 
-      <div style={{ display: "flex", gap: "var(--sp-10)", flexWrap: "wrap", marginTop: "var(--sp-12)" }}>
+      <div style={{ display: "flex", gap: "var(--sp-8)", flexWrap: "wrap", marginTop: "var(--sp-12)" }}>
         <button className="btn secondary" type="button" onClick={downloadEggLotHistoryMemoTemplate}>
           템플릿 다운로드
         </button>
 
-        <label className="btn" style={{ cursor: busy ? "not-allowed" : "pointer" }}>
+        <label className="btn" style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-8)" }}>
           파일 선택
-          <input type="file" accept=".xlsx" onChange={onPick} disabled={busy} style={{ display: "none" }} />
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={(e) => onPickFile(e.target.files?.[0])}
+          />
         </label>
 
-        <button className="btn" type="button" onClick={onUpload} disabled={busy}>
-          {busy ? "업로드 중..." : "업로드"}
+        <button className="btn" type="button" disabled={loading || !validRows.length} onClick={onUpload}>
+          업로드 실행
         </button>
+
+        {file && (
+          <span style={{ fontSize: "var(--fs-13)", color: "#475569", alignSelf: "center" }}>
+            선택 파일: <b>{file.name}</b>
+          </span>
+        )}
       </div>
 
-      {file && (
-        <div className="muted" style={{ marginTop: "var(--sp-10)" }}>
-          선택된 파일: {file.name}
+      <div style={{ marginTop: "var(--sp-14)", color: "#64748b", fontSize: "var(--fs-13)" }}>
+        {loading
+          ? `업로드 중... (${progress.done}/${progress.total})`
+          : file
+          ? `유효 ${validRows.length}건 / 오류 ${invalidRows.length}건`
+          : "템플릿을 내려받아 작성 후 업로드하세요."}
+      </div>
+
+      {!!parsed.errors?.length && (
+        <div style={{ marginTop: "var(--sp-12)" }}>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>오류 행</div>
+          <div
+            style={{
+              maxHeight: "clamp(140px, calc(180 * var(--ui)), 220px)",
+              overflow: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--sp-10)",
+            }}
+          >
+            {parsed.errors.map((e, idx) => (
+              <div
+                key={`${e.row}-${idx}`}
+                style={{ fontSize: "var(--fs-13)", color: "#b91c1c", marginBottom: "clamp(3px, calc(4 * var(--ui)), 6px)" }}
+              >
+                {e.row}행: {e.message}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
-      {msg && (
-        <div className="field-error" style={{ marginTop: "var(--sp-10)", whiteSpace: "pre-wrap" }}>
-          {msg}
-        </div>
-      )}
-
-      {parsed.errors?.length > 0 && (
+      {!!validRows.length && (
         <div style={{ marginTop: "var(--sp-14)" }}>
-          <div className="filters-title">오류</div>
-          <div className="muted">상위 {Math.min(parsed.errors.length, 50)}건만 표시됩니다.</div>
-          <div className="table-wrap" style={{ marginTop: "var(--sp-10)" }}>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>미리보기 (상위 20건)</div>
+          <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: 120 }}>행</th>
-                  <th>메시지</th>
+                  <th>Excel 행</th>
+                  <th>ID</th>
+                  <th>메모</th>
                 </tr>
               </thead>
               <tbody>
-                {parsed.errors.slice(0, 50).map((e, idx) => (
-                  <tr key={idx}>
-                    <td>{e.row}</td>
-                    <td className="wrap-cell">{e.message}</td>
+                {validRows.slice(0, 20).map((r) => (
+                  <tr key={`${r.__rowNum}-${r.id}`}>
+                    <td>{r.__rowNum}</td>
+                    <td>{r.id}</td>
+                    <td className="wrap-cell">{r.memo}</td>
                   </tr>
                 ))}
               </tbody>
@@ -120,28 +125,32 @@ export default function EggInventoryHistoryExcel() {
         </div>
       )}
 
-      {preview.length > 0 && (
-        <div style={{ marginTop: "var(--sp-14)" }}>
-          <div className="filters-title">미리보기</div>
-          <div className="muted">상위 20건만 표시됩니다.</div>
-
-          <div className="table-wrap" style={{ marginTop: "var(--sp-10)" }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 100 }}>ID</th>
-                  <th>메모</th>
-                </tr>
-              </thead>
-              <tbody>
-                {preview.map((r, idx) => (
-                  <tr key={idx}>
-                    <td>{r.id}</td>
-                    <td className="wrap-cell">{r.memo}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {result && (
+        <div style={{ marginTop: "var(--sp-16)" }}>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>
+            결과: 성공 {result.success} / 실패 {result.fail}
+          </div>
+          <div
+            style={{
+              maxHeight: "clamp(160px, calc(220 * var(--ui)), 260px)",
+              overflow: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--sp-10)",
+            }}
+          >
+            {result.details.map((d, idx) => (
+              <div
+                key={`${d.row}-${idx}`}
+                style={{
+                  fontSize: "var(--fs-13)",
+                  color: d.ok ? "#047857" : "#b91c1c",
+                  marginBottom: "clamp(3px, calc(4 * var(--ui)), 6px)",
+                }}
+              >
+                {d.row}행: {d.ok ? "OK" : d.message}
+              </div>
+            ))}
           </div>
         </div>
       )}

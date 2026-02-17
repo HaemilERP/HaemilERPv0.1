@@ -112,7 +112,7 @@ export default function EggInventoryHistory() {
     { value: "farm", label: "농장" },
     { value: "changed_by", label: "변경자" },
     { value: "memo", label: "메모" },
-    { value: "id", label: "ID" },
+    { value: "id", label: "계란 변경내역ID" },
   ];
 
   const fetchFarms = async () => {
@@ -245,7 +245,7 @@ export default function EggInventoryHistory() {
   }
 
   return (
-    <div className="accounting-page">
+    <div className="accounting-page inventory-page">
       <aside className="filters-card">
         <div className="filters-title">필터</div>
 
@@ -262,7 +262,7 @@ export default function EggInventoryHistory() {
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">메모 존재</div>
+          <div className="filter-label">변경내역 메모</div>
           <select className="filter-select" value={fHasMemo} onChange={(e) => setFHasMemo(e.target.value)}>
             <option value="">전체</option>
             <option value="true">유</option>
@@ -285,31 +285,30 @@ export default function EggInventoryHistory() {
           <h2 className="page-title">계란재고 변경내역</h2>
           <div className="head-actions">
             <button className="btn secondary" type="button" onClick={onExport} disabled={loading}>
-              엑셀출력
+              엑셀 출력
             </button>
+
+            <SearchBar
+              field={searchField}
+              setField={setSearchField}
+              text={searchText}
+              setText={setSearchText}
+              fields={SEARCH_FIELDS}
+              loading={loading}
+              onSearch={onSearch}
+              placeholder="검색어"
+            />
           </div>
         </div>
 
-        <SearchBar
-          field={searchField}
-          setField={setSearchField}
-          text={searchText}
-          setText={setSearchText}
-          fields={SEARCH_FIELDS}
-          loading={loading}
-          onSearch={onSearch}
-          placeholder="검색어 (예: 농장명, #계란재고ID, 변경자, 메모)"
-          inputWidth="var(--w-330)"
-        />
-
-        <div className="muted" style={{ marginTop: "var(--sp-10)" }}>
+        <div className="muted" style={{ marginBottom: "var(--sp-10)" }}>
           {loading ? "불러오는 중..." : err ? err : `총 ${filtered.length}건`}
         </div>
 
         <div className="table-wrap no-x" style={{ marginTop: "var(--sp-12)" }}>
           <table className="data-table product-table">
             <colgroup>
-              <col style={{ width: "5%" }} />
+              <col style={{ width: "8%" }} />
               <col style={{ width: "10%" }} />
               <col style={{ width: "8%" }} />
               <col style={{ width: "7%" }} />
@@ -317,12 +316,12 @@ export default function EggInventoryHistory() {
               <col style={{ width: "7%" }} />
               <col style={{ width: "10%" }} />
               <col style={{ width: "18%" }} />
-              <col style={{ width: "20%" }} />
+              <col style={{ width: "12%" }} />
               <col style={{ width: "8%" }} />
             </colgroup>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>계란 변경내역ID</th>
                 <th>계란재고</th>
                 <th>유형</th>
                 <th className="num-cell">변경전</th>

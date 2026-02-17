@@ -92,7 +92,7 @@ export default function GoodsInventory() {
     { value: "egg_lot", label: "계란재고" },
     { value: "location", label: "위치" },
     { value: "memo", label: "메모" },
-    { value: "id", label: "ID" },
+    { value: "id", label: "제품재고ID" },
   ];
 
   const productsById = useMemo(() => {
@@ -206,7 +206,7 @@ export default function GoodsInventory() {
 
       const errs = {};
       if (!Number.isFinite(payload.product)) errs.product = "제품을 선택해주세요.";
-      if (!Number.isFinite(payload.egg_lot)) errs.egg_lot = "계란재고(원재료)를 선택해주세요.";
+      if (!Number.isFinite(payload.egg_lot)) errs.egg_lot = "계란재고를 선택해주세요.";
       if (!Number.isFinite(payload.quantity)) errs.quantity = "수량을 숫자로 입력해주세요.";
       if (!payload.location?.trim()) errs.location = "위치를 입력해주세요.";
       if (Object.keys(errs).length) {
@@ -230,7 +230,7 @@ export default function GoodsInventory() {
 
   async function onDelete(row) {
     const productLabel = toName(row?.product, productsById, "product_name");
-    const ok = window.confirm(`'${productLabel || ""}' 제품재고(#${row?.id ?? ""})를 삭제할까요?`);
+    const ok = window.confirm(`'${row?.id ?? ""}(${productLabel || ""})' 제품재고를 삭제할까요?`);
     if (!ok) return;
     try {
       await deleteProductLot(row.id);
@@ -254,7 +254,7 @@ export default function GoodsInventory() {
 
       const eggLotId = toId(r?.egg_lot);
       const eggLotReceiving = ymd(eggLotsById?.[eggLotId]?.receiving_date);
-      const eggLotText = `#${eggLotId} ${eggLotReceiving}`.trim();
+      const eggLotText = `${eggLotId} ${eggLotReceiving}`.trim();
 
       if (fProduct && !includesAnyTokens(productText, fProduct)) return false;
       if (fEggLot && !includesAnyTokens(eggLotText, fEggLot)) return false;
@@ -317,18 +317,18 @@ export default function GoodsInventory() {
   }
 
   return (
-    <div className="accounting-page">
+    <div className="accounting-page inventory-page">
       <div className="filters-card">
         <div className="filters-title">필터</div>
 
         <div className="filter-group">
-          <div className="filter-label">제품(이름/ID)</div>
-          <input className="filter-input" value={fProduct} onChange={(e) => setFProduct(e.target.value)} placeholder="예) 특란 101" />
+          <div className="filter-label">제품명(키워드 검색)</div>
+          <input className="filter-input" value={fProduct} onChange={(e) => setFProduct(e.target.value)} placeholder="제품명(ID)" />
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">원재료(계란재고 ID/입고일)</div>
-          <input className="filter-input" value={fEggLot} onChange={(e) => setFEggLot(e.target.value)} placeholder="예) 12 2026-02" />
+          <div className="filter-label">계란재고(키워드 검색)</div>
+          <input className="filter-input" value={fEggLot} onChange={(e) => setFEggLot(e.target.value)} placeholder="계란재고(ID/입고일)" />
         </div>
 
         <div className="filter-group">
@@ -344,29 +344,27 @@ export default function GoodsInventory() {
 
         <div className="filter-group">
           <div className="filter-label">수량</div>
-          <div className="field-row">
+          <div style={{ display: "flex", gap: "var(--sp-8)" }}>
             <input
               className="filter-input"
               inputMode="numeric"
               value={fQtyMin}
               onChange={(e) => setFQtyMin(e.target.value)}
-              placeholder="최소"
+              placeholder="min"
             />
-            <span className="muted">부터</span>
             <input
               className="filter-input"
               inputMode="numeric"
               value={fQtyMax}
               onChange={(e) => setFQtyMax(e.target.value)}
-              placeholder="최대"
+              placeholder="max"
             />
-            <span className="muted">까지</span>
           </div>
         </div>
 
         <div className="filter-group">
           <div className="filter-label">위치</div>
-          <input className="filter-input" value={fLocation} onChange={(e) => setFLocation(e.target.value)} placeholder="예) 냉장1" />
+          <input className="filter-input" value={fLocation} onChange={(e) => setFLocation(e.target.value)} placeholder="위치" />
         </div>
 
         <div className="filter-group" style={{ marginBottom: 0 }}>
@@ -417,7 +415,7 @@ export default function GoodsInventory() {
           <table className="data-table product-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>제품재고ID</th>
                 <th>제품</th>
                 <th>계란재고</th>
                 <th>수량</th>
@@ -444,7 +442,7 @@ export default function GoodsInventory() {
 
                   const eggLotId = toId(r?.egg_lot);
                   const eggLotReceiving = ymd(eggLotsById?.[eggLotId]?.receiving_date);
-                  const eggLotLabel = eggLotReceiving ? `#${eggLotId} (${eggLotReceiving})` : `#${eggLotId}`;
+                  const eggLotLabel = eggLotReceiving ? `${eggLotId} (${eggLotReceiving})` : eggLotId;
 
                   return (
                     <tr key={r.id}>
@@ -482,7 +480,7 @@ export default function GoodsInventory() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h3 className="modal-title">{editing ? "제품재고 수정" : "제품재고 신규등록"}</h3>
+              <h3 className="modal-title">{editing ? "제품재고 수정" : "제품재고 추가"}</h3>
               <button className="btn secondary small" type="button" onClick={closeModal}>
                 닫기
               </button>
@@ -512,7 +510,7 @@ export default function GoodsInventory() {
                       <option value="">선택</option>
                       {(eggLots || []).map((l) => (
                         <option key={l.id} value={l.id}>
-                          #{l.id} / {ymd(l.receiving_date)} / {asText(l.egg_weight)} / {l.quantity}개
+                          {l.id} / {ymd(l.receiving_date)} / {asText(l.egg_weight)} / {l.quantity}개
                         </option>
                       ))}
                     </select>
@@ -527,7 +525,7 @@ export default function GoodsInventory() {
 
                   <div className="field">
                     <div className="filter-label">위치</div>
-                    <input className="filter-input" value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} placeholder="예) 냉장1" />
+                    <input className="filter-input" value={form.location} onChange={(e) => setForm((p) => ({ ...p, location: e.target.value }))} placeholder="위치" />
                     {fieldErrs.location && <div className="field-error">{fieldErrs.location}</div>}
                   </div>
 
@@ -537,10 +535,10 @@ export default function GoodsInventory() {
                   </div>
 
                   <div className="field">
-                    <div className="filter-label">활성여부</div>
+                    <div className="filter-label">인증/여부</div>
                     <label className="checkbox" style={{ marginTop: "var(--sp-6)" }}>
                       <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))} />
-                      <span>활성</span>
+                      <span>활성여부</span>
                     </label>
                   </div>
                 </div>

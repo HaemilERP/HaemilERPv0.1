@@ -1,156 +1,134 @@
-import { useMemo, useState } from "react";
+import { useCallback } from "react";
 import {
   downloadProductLotTemplate,
   parseProductLotAOA,
   readFirstSheetAOA,
 } from "../../utils/excel";
 import { createProductLot, patchProductLot } from "../../services/inventoryApi";
+import useExcelBatchUpload from "../../hooks/useExcelBatchUpload";
+import "../accounting/AccountingTable.css";
 
 export default function GoodsInventoryExcel() {
-  const [file, setFile] = useState(null);
-  const [parsed, setParsed] = useState({ rows: [], errors: [] });
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState("");
+  const uploadRow = useCallback(async (row) => {
+    const payload = {
+      product: row.product,
+      quantity: row.quantity,
+      location: row.location,
+      egg_lot: row.egg_lot,
+      ...(row.memo ? { memo: row.memo } : {}),
+      ...(row.is_active !== undefined ? { is_active: row.is_active } : {}),
+    };
 
-  const preview = useMemo(() => parsed.rows.slice(0, 20), [parsed.rows]);
+    if (row.id != null) await patchProductLot(row.id, payload);
+    else await createProductLot(payload);
+  }, []);
 
-  async function onPick(e) {
-    const f = e.target.files?.[0];
-    setFile(f || null);
-    setParsed({ rows: [], errors: [] });
-    setMsg("");
-    if (!f) return;
-
-    try {
-      const aoa = await readFirstSheetAOA(f);
-      setParsed(parseProductLotAOA(aoa));
-    } catch (err) {
-      setMsg(err?.message || "엑셀 파일을 읽지 못했습니다.");
-    }
-  }
-
-  async function onUpload() {
-    if (busy) return;
-    if (!parsed.rows.length) {
-      setMsg("업로드할 데이터가 없습니다.");
-      return;
-    }
-
-    const valid = parsed.rows.filter((r) => !r.__invalid);
-    if (!valid.length) {
-      setMsg("유효한 행이 없습니다. 오류를 먼저 수정해주세요.");
-      return;
-    }
-
-    setBusy(true);
-    setMsg("");
-
-    let okCount = 0;
-    let failCount = 0;
-
-    for (const r of valid) {
-      try {
-        const payload = {
-          product: r.product,
-          quantity: r.quantity,
-          location: r.location,
-          egg_lot: r.egg_lot,
-          ...(r.memo ? { memo: r.memo } : {}),
-          ...(r.is_active !== undefined ? { is_active: r.is_active } : {}),
-        };
-
-        if (r.id != null) await patchProductLot(r.id, payload);
-        else await createProductLot(payload);
-
-        okCount += 1;
-      } catch {
-        failCount += 1;
-      }
-    }
-
-    setBusy(false);
-    setMsg(`업로드 완료: 성공 ${okCount}건 / 실패 ${failCount}건`);
-  }
+  const {
+    file,
+    parsed,
+    loading,
+    progress,
+    result,
+    validRows,
+    invalidRows,
+    onPickFile,
+    onUpload,
+  } = useExcelBatchUpload({
+    parseAOA: parseProductLotAOA,
+    readAOA: readFirstSheetAOA,
+    uploadRow,
+    confirmMessage: (validCount, invalidCount) =>
+      `총 ${validCount}건을 업로드할까요? (오류 행 ${invalidCount}건)`,
+    emptyValidMessage: "업로드할 유효 데이터가 없습니다.",
+    uploadFailMessage: "업로드 실패",
+    readFailMessage: "엑셀 파일을 읽지 못했습니다.",
+  });
 
   return (
     <div className="page-card">
-      <h2>제품재고 엑셀입력</h2>
-      <p style={{ color: "#64748b" }}>
-        템플릿을 다운로드한 후 데이터를 입력하고 업로드하세요. ID가 있으면 수정(PATCH), 없으면 신규등록(POST)으로 처리됩니다.
+      <h2>제품재고 엑셀 입력</h2>
+      <p style={{ color: "#64748b", marginTop: "var(--sp-6)" }}>
+        제품재고를 엑셀로 등록/수정할 수 있습니다. ID가 있으면 수정, 없으면 신규 등록됩니다.
       </p>
 
-      <div style={{ display: "flex", gap: "var(--sp-10)", flexWrap: "wrap", marginTop: "var(--sp-12)" }}>
+      <div style={{ display: "flex", gap: "var(--sp-8)", flexWrap: "wrap", marginTop: "var(--sp-12)" }}>
         <button className="btn secondary" type="button" onClick={downloadProductLotTemplate}>
           템플릿 다운로드
         </button>
 
-        <label className="btn" style={{ cursor: busy ? "not-allowed" : "pointer" }}>
+        <label className="btn" style={{ display: "inline-flex", alignItems: "center", gap: "var(--sp-8)" }}>
           파일 선택
-          <input type="file" accept=".xlsx" onChange={onPick} disabled={busy} style={{ display: "none" }} />
+          <input
+            type="file"
+            accept=".xlsx,.xls"
+            style={{ display: "none" }}
+            onChange={(e) => onPickFile(e.target.files?.[0])}
+          />
         </label>
 
-        <button className="btn" type="button" onClick={onUpload} disabled={busy}>
-          {busy ? "업로드 중..." : "업로드"}
+        <button className="btn" type="button" disabled={loading || !validRows.length} onClick={onUpload}>
+          업로드 실행
         </button>
+
+        {file && (
+          <span style={{ fontSize: "var(--fs-13)", color: "#475569", alignSelf: "center" }}>
+            선택 파일: <b>{file.name}</b>
+          </span>
+        )}
       </div>
 
-      {file && (
-        <div className="muted" style={{ marginTop: "var(--sp-10)" }}>
-          선택된 파일: {file.name}
-        </div>
-      )}
+      <div style={{ marginTop: "var(--sp-14)", color: "#64748b", fontSize: "var(--fs-13)" }}>
+        {loading
+          ? `업로드 중... (${progress.done}/${progress.total})`
+          : file
+          ? `유효 ${validRows.length}건 / 오류 ${invalidRows.length}건`
+          : "템플릿을 내려받아 작성 후 업로드하세요."}
+      </div>
 
-      {msg && (
-        <div className="field-error" style={{ marginTop: "var(--sp-10)", whiteSpace: "pre-wrap" }}>
-          {msg}
-        </div>
-      )}
-
-      {parsed.errors?.length > 0 && (
-        <div style={{ marginTop: "var(--sp-14)" }}>
-          <div className="filters-title">오류</div>
-          <div className="muted">상위 {Math.min(parsed.errors.length, 50)}건만 표시됩니다.</div>
-          <div className="table-wrap" style={{ marginTop: "var(--sp-10)" }}>
-            <table className="data-table">
-              <thead>
-                <tr>
-                  <th style={{ width: 120 }}>행</th>
-                  <th>메시지</th>
-                </tr>
-              </thead>
-              <tbody>
-                {parsed.errors.slice(0, 50).map((e, idx) => (
-                  <tr key={idx}>
-                    <td>{e.row}</td>
-                    <td className="wrap-cell">{e.message}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+      {!!parsed.errors?.length && (
+        <div style={{ marginTop: "var(--sp-12)" }}>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>오류 행</div>
+          <div
+            style={{
+              maxHeight: "clamp(140px, calc(180 * var(--ui)), 220px)",
+              overflow: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--sp-10)",
+            }}
+          >
+            {parsed.errors.map((e, idx) => (
+              <div
+                key={`${e.row}-${idx}`}
+                style={{ fontSize: "var(--fs-13)", color: "#b91c1c", marginBottom: "clamp(3px, calc(4 * var(--ui)), 6px)" }}
+              >
+                {e.row}행: {e.message}
+              </div>
+            ))}
           </div>
         </div>
       )}
 
-      {preview.length > 0 && (
+      {!!validRows.length && (
         <div style={{ marginTop: "var(--sp-14)" }}>
-          <div className="filters-title">미리보기</div>
-          <div className="muted">상위 20건만 표시됩니다.</div>
-
-          <div className="table-wrap" style={{ marginTop: "var(--sp-10)" }}>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>미리보기 (상위 20건)</div>
+          <div className="table-wrap">
             <table className="data-table">
               <thead>
                 <tr>
-                  <th style={{ width: 80 }}>ID</th>
-                  <th style={{ width: 120 }}>제품ID</th>
-                  <th style={{ width: 110 }}>수량</th>
-                  <th style={{ width: 220 }}>위치</th>
-                  <th style={{ width: 140 }}>계란재고ID</th>
+                  <th>Excel 행</th>
+                  <th>ID</th>
+                  <th>제품ID</th>
+                  <th>수량</th>
+                  <th>위치</th>
+                  <th>계란재고ID</th>
                   <th>메모</th>
                 </tr>
               </thead>
               <tbody>
-                {preview.map((r, idx) => (
-                  <tr key={idx}>
+                {validRows.slice(0, 20).map((r) => (
+                  <tr key={`${r.__rowNum}-${r.id ?? "new"}`}>
+                    <td>{r.__rowNum}</td>
                     <td>{r.id ?? ""}</td>
                     <td>{r.product}</td>
                     <td>{r.quantity}</td>
@@ -161,6 +139,36 @@ export default function GoodsInventoryExcel() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {result && (
+        <div style={{ marginTop: "var(--sp-16)" }}>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>
+            결과: 성공 {result.success} / 실패 {result.fail}
+          </div>
+          <div
+            style={{
+              maxHeight: "clamp(160px, calc(220 * var(--ui)), 260px)",
+              overflow: "auto",
+              border: "1px solid #e5e7eb",
+              borderRadius: "var(--radius-md)",
+              padding: "var(--sp-10)",
+            }}
+          >
+            {result.details.map((d, idx) => (
+              <div
+                key={`${d.row}-${idx}`}
+                style={{
+                  fontSize: "var(--fs-13)",
+                  color: d.ok ? "#047857" : "#b91c1c",
+                  marginBottom: "clamp(3px, calc(4 * var(--ui)), 6px)",
+                }}
+              >
+                {d.row}행: {d.ok ? "OK" : d.message}
+              </div>
+            ))}
           </div>
         </div>
       )}

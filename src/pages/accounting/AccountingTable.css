@@ -150,6 +150,8 @@
   display: flex;
   gap: var(--sp-8);
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .row-actions {
@@ -421,4 +423,17 @@
 
 .data-table td.actions-cell .row-actions {
   justify-content: center;
+}
+
+
+/* Inventory modals: remove number input spinners (▲▼) */
+.accounting-page.inventory-page .modal input[type="number"]::-webkit-outer-spin-button,
+.accounting-page.inventory-page .modal input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.accounting-page.inventory-page .modal input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }

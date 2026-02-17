@@ -71,7 +71,6 @@ export default function EggInventory() {
     location: "",
     quantity: "",
     memo: "",
-    history_memo: "",
     is_active: true,
   });
 
@@ -87,6 +86,10 @@ export default function EggInventory() {
   const [fLayingTo, setFLayingTo] = useState("");
   const [fEggType, setFEggType] = useState("");
   const [fEggWeight, setFEggWeight] = useState("");
+  const [fEggGrade, setFEggGrade] = useState("");
+  const [fLocation, setFLocation] = useState("");
+  const [fQtyMin, setFQtyMin] = useState("");
+  const [fQtyMax, setFQtyMax] = useState("");
   const [fIsActive, setFIsActive] = useState("");
 
   // Pagination
@@ -100,7 +103,7 @@ export default function EggInventory() {
     { value: "egg_grade", label: "등급" },
     { value: "location", label: "위치" },
     { value: "memo", label: "메모" },
-    { value: "id", label: "ID" },
+    { value: "id", label: "계란재고ID" },
   ];
 
   const farmsById = useMemo(() => {
@@ -153,7 +156,6 @@ export default function EggInventory() {
       location: "",
       quantity: "",
       memo: "",
-      history_memo: "",
       is_active: true,
     });
     setModalOpen(true);
@@ -177,7 +179,6 @@ export default function EggInventory() {
       location: asText(row?.location) || "",
       quantity: row?.quantity ?? "",
       memo: asText(row?.memo) || "",
-      history_memo: "",
       is_active: Boolean(row?.is_active),
     });
     setModalOpen(true);
@@ -223,7 +224,6 @@ export default function EggInventory() {
         ...(form.egg_type ? { egg_type: form.egg_type } : {}),
         ...(form.location ? { location: form.location } : {}),
         ...(form.memo ? { memo: form.memo } : {}),
-        ...(form.history_memo ? { history_memo: form.history_memo } : {}),
       };
 
       const errs = {};
@@ -255,8 +255,8 @@ export default function EggInventory() {
   }
 
   async function onDelete(row) {
-    const label = `${toFarmName(row?.farm, farmsById)}(#${row?.id ?? ""})`;
-    const ok = window.confirm(`${label} 재고를 삭제할까요?`);
+    const label = `${row?.id ?? ""}(${toFarmName(row?.farm, farmsById)})`;
+    const ok = window.confirm(`'${label}' 계란재고를 삭제할까요?`);
     if (!ok) return;
     try {
       await deleteEggLot(row.id);
@@ -273,6 +273,9 @@ export default function EggInventory() {
     const layFrom = fLayingFrom ? new Date(fLayingFrom) : null;
     const layTo = fLayingTo ? new Date(fLayingTo) : null;
 
+    const qtyMin = fQtyMin.trim() !== "" && Number.isFinite(Number(fQtyMin)) ? Number(fQtyMin) : null;
+    const qtyMax = fQtyMax.trim() !== "" && Number.isFinite(Number(fQtyMax)) ? Number(fQtyMax) : null;
+
     return (rows || []).filter((r) => {
       const farmId = toFarmId(r?.farm);
       const farmName = toFarmName(r?.farm, farmsById);
@@ -282,6 +285,11 @@ export default function EggInventory() {
       if (fEggType && asText(r?.egg_type) !== fEggType) return false;
       if (fEggWeight && asText(r?.egg_weight) !== fEggWeight) return false;
       if (!matchBool(r?.is_active, fIsActive)) return false;
+      if (fEggGrade && !includesAnyTokens(r?.egg_grade, fEggGrade)) return false;
+      if (fLocation && !includesAnyTokens(r?.location, fLocation)) return false;
+      const qty = Number(r?.quantity);
+      if (qtyMin !== null && (!Number.isFinite(qty) || qty < qtyMin)) return false;
+      if (qtyMax !== null && (!Number.isFinite(qty) || qty > qtyMax)) return false;
 
       const recv = r?.receiving_date ? new Date(ymd(r.receiving_date)) : null;
       if (recvFrom && (!recv || recv < recvFrom)) return false;
@@ -318,6 +326,10 @@ export default function EggInventory() {
     fLayingTo,
     fEggType,
     fEggWeight,
+    fEggGrade,
+    fLocation,
+    fQtyMin,
+    fQtyMax,
     fIsActive,
   ]);
 
@@ -356,36 +368,40 @@ export default function EggInventory() {
   }
 
   return (
-    <div className="accounting-page">
+    <div className="accounting-page inventory-page">
       {/* 좌측 필터 */}
       <div className="filters-card">
         <div className="filters-title">필터</div>
 
         <div className="filter-group">
-          <div className="filter-label">농장(이름/ID)</div>
-          <input className="filter-input" value={fFarm} onChange={(e) => setFFarm(e.target.value)} placeholder="예) 해밀 12" />
+          <div className="filter-label">농장명(키워드 검색)</div>
+          <input className="filter-input" value={fFarm} onChange={(e) => setFFarm(e.target.value)} placeholder="농장명(ID)" />
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">입고일</div>
+          <div className="filter-label">입고일(From)</div>
           <div className="field-row">
             <input className="filter-input" type="date" value={fReceivingFrom} onChange={(e) => setFReceivingFrom(e.target.value)} />
-            <span className="muted">~</span>
+          </div>
+          <div className="filter-label">입고일(To)</div>
+          <div className="field-row">
             <input className="filter-input" type="date" value={fReceivingTo} onChange={(e) => setFReceivingTo(e.target.value)} />
           </div>
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">산란일</div>
+          <div className="filter-label">산란일(From)</div>
           <div className="field-row">
             <input className="filter-input" type="date" value={fLayingFrom} onChange={(e) => setFLayingFrom(e.target.value)} />
-            <span className="muted">~</span>
+          </div>
+          <div className="filter-label">산란일(To)</div>
+          <div className="field-row">
             <input className="filter-input" type="date" value={fLayingTo} onChange={(e) => setFLayingTo(e.target.value)} />
           </div>
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">카테고리</div>
+          <div className="filter-label">계란유형</div>
           <select className="filter-select" value={fEggType} onChange={(e) => setFEggType(e.target.value)}>
             {EGG_TYPE_CHOICES.map((t) => (
               <option key={t} value={t}>
@@ -404,6 +420,24 @@ export default function EggInventory() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="filter-group">
+          <div className="filter-label">등급</div>
+          <input className="filter-input" value={fEggGrade} onChange={(e) => setFEggGrade(e.target.value)} placeholder="등급" />
+        </div>
+
+        <div className="filter-group">
+          <div className="filter-label">위치</div>
+          <input className="filter-input" value={fLocation} onChange={(e) => setFLocation(e.target.value)} placeholder="위치" />
+        </div>
+
+        <div className="filter-group">
+          <div className="filter-label">수량</div>
+          <div style={{ display: "flex", gap: "var(--sp-8)" }}>
+            <input className="filter-input" inputMode="numeric" value={fQtyMin} onChange={(e) => setFQtyMin(e.target.value)} placeholder="min" />
+            <input className="filter-input" inputMode="numeric" value={fQtyMax} onChange={(e) => setFQtyMax(e.target.value)} placeholder="max" />
+          </div>
         </div>
 
         <div className="filter-group" style={{ marginBottom: 0 }}>
@@ -455,7 +489,7 @@ export default function EggInventory() {
           <table className="data-table product-table">
             <thead>
               <tr>
-                <th>ID</th>
+                <th>계란재고ID</th>
                 <th>농장</th>
                 <th>입고일</th>
                 <th>산란일</th>
@@ -524,7 +558,7 @@ export default function EggInventory() {
         <div className="modal-overlay" onClick={closeModal}>
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
-              <h3 className="modal-title">{editing ? "계란재고 수정" : "계란재고 신규등록"}</h3>
+              <h3 className="modal-title">{editing ? "계란재고 수정" : "계란재고 추가"}</h3>
               <button className="btn secondary small" type="button" onClick={closeModal}>
                 닫기
               </button>
@@ -580,11 +614,11 @@ export default function EggInventory() {
                   </div>
 
                   <div className="field">
-                    <div className="filter-label">카테고리</div>
+                    <div className="filter-label">계란유형</div>
                     <select className="filter-select" value={form.egg_type} onChange={(e) => setForm((p) => ({ ...p, egg_type: e.target.value }))}>
                       {EGG_TYPE_CHOICES.map((t) => (
                         <option key={t} value={t}>
-                          {t || "선택안함"}
+                          {t || "선택"}
                         </option>
                       ))}
                     </select>
@@ -592,7 +626,7 @@ export default function EggInventory() {
 
                   <div className="field">
                     <div className="filter-label">등급</div>
-                    <input className="filter-input" value={form.egg_grade} onChange={(e) => setForm((p) => ({ ...p, egg_grade: e.target.value }))} placeholder="예) A" />
+                    <input className="filter-input" value={form.egg_grade} onChange={(e) => setForm((p) => ({ ...p, egg_grade: e.target.value }))} placeholder="등급" />
                     {fieldErrs.egg_grade && <div className="field-error">{fieldErrs.egg_grade}</div>}
                   </div>
 
@@ -629,27 +663,16 @@ export default function EggInventory() {
                   </div>
 
                   <div className="field">
-                    <div className="filter-label">활성여부</div>
+                    <div className="filter-label">인증/여부</div>
                     <label className="checkbox" style={{ marginTop: "var(--sp-6)" }}>
                       <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))} />
-                      <span>활성</span>
+                      <span>활성여부</span>
                     </label>
                   </div>
 
                   <div className="field" style={{ gridColumn: "1 / -1" }}>
                     <div className="filter-label">메모</div>
                     <textarea className="filter-input" rows={4} value={form.memo} onChange={(e) => setForm((p) => ({ ...p, memo: e.target.value }))} />
-                  </div>
-
-                  <div className="field" style={{ gridColumn: "1 / -1" }}>
-                    <div className="filter-label">변경내역 메모(선택)</div>
-                    <textarea
-                      className="filter-input"
-                      rows={3}
-                      value={form.history_memo}
-                      onChange={(e) => setForm((p) => ({ ...p, history_memo: e.target.value }))}
-                      placeholder="이번 수정/등록에 대한 코멘트(변경내역에 저장)"
-                    />
                   </div>
                 </div>
               </div>

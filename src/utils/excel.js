@@ -487,14 +487,14 @@ export async function downloadEggLotListXlsx(rows) {
   wb.created = new Date();
 
   const headers = [
-    "ID",
+    "계란재고ID",
     "농장ID",
     "입고일",
     "난각번호",
     "사육번호",
     "농장유형",
-    "주령(주)",
-    "가공여부",
+    "주령",
+    "가공",
     "난중",
     "산란일",
     "등급",
@@ -511,8 +511,8 @@ export async function downloadEggLotListXlsx(rows) {
     rows,
     colWidths: [10, 12, 14, 12, 12, 14, 12, 12, 10, 14, 10, 18, 10, 26, 10],
     validations: [
-      { colName: "농장유형", options: ["일반농장", "동물복지농장"] },
-      { colName: "가공여부", options: ["구운란", "생란", "액란", "기타"] },
+      { colName: "농장유형", options: ["일반농장", "계약사육농장"] },
+      { colName: "가공", options: ["구운란", "생란", "반숙", "기타"] },
       { colName: "난중", options: ["왕란", "특란", "대란", "중란", "소란"] },
       { colName: "활성여부", options: ["유", "무"] },
     ],
@@ -527,7 +527,7 @@ export async function downloadProductLotListXlsx(rows) {
   wb.creator = "Haemil ERP";
   wb.created = new Date();
 
-  const headers = ["ID", "제품ID", "계란재고ID", "수량", "위치", "메모", "활성여부"];
+  const headers = ["제품재고ID", "제품ID", "계란재고ID", "수량", "위치", "메모", "활성여부"];
 
   buildDataSheet(wb, {
     sheetName: "제품재고",
@@ -548,9 +548,9 @@ export async function downloadEggLotHistoryListXlsx(rows) {
   wb.created = new Date();
 
   const headers = [
-    "ID",
-    "계란재고ID",
-    "변경유형",
+    "계란 변경내역ID",
+    "계란재고",
+    "유형",
     "변경전",
     "변경후",
     "변경수량",
@@ -560,7 +560,7 @@ export async function downloadEggLotHistoryListXlsx(rows) {
   ];
 
   buildDataSheet(wb, {
-    sheetName: "계란재고변경",
+    sheetName: "계란변경내역",
     title: "계란재고 변경내역 엑셀 출력",
     headers,
     rows,
@@ -568,7 +568,7 @@ export async function downloadEggLotHistoryListXlsx(rows) {
   });
 
   const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_계란재고변경내역_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbookBuffer(`HaemilERP_계란변경내역_${todayYMD()}.xlsx`, buf);
 }
 
 export async function downloadProductLotHistoryListXlsx(rows) {
@@ -577,9 +577,9 @@ export async function downloadProductLotHistoryListXlsx(rows) {
   wb.created = new Date();
 
   const headers = [
-    "ID",
-    "제품재고ID",
-    "변경유형",
+    "제품 변경내역ID",
+    "제품재고",
+    "유형",
     "변경전",
     "변경후",
     "변경수량",
@@ -589,7 +589,7 @@ export async function downloadProductLotHistoryListXlsx(rows) {
   ];
 
   buildDataSheet(wb, {
-    sheetName: "제품재고변경",
+    sheetName: "제품변경내역",
     title: "제품재고 변경내역 엑셀 출력",
     headers,
     rows,
@@ -597,7 +597,7 @@ export async function downloadProductLotHistoryListXlsx(rows) {
   });
 
   const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품재고변경내역_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbookBuffer(`HaemilERP_제품변경내역_${todayYMD()}.xlsx`, buf);
 }
 export async function downloadCustomerTemplate() {
   const wb = new ExcelJS.Workbook();
@@ -658,16 +658,16 @@ export async function downloadProductTemplate() {
 export async function downloadEggLotTemplate() {
   const wb = new ExcelJS.Workbook();
   buildTemplateSheet(wb, {
-    title: "계란재고(EggLot) 입력 서식",
+    title: "계란재고(EggLot) 입력 양식",
     headers: [
-      "ID",
+      "계란재고ID",
       "농장ID",
       "입고일",
       "난각번호",
       "사육번호",
       "농장유형",
-      "주령(주)",
-      "가공여부",
+      "주령",
+      "가공",
       "난중",
       "산란일",
       "등급",
@@ -678,28 +678,28 @@ export async function downloadEggLotTemplate() {
     ],
     colWidths: [10, 12, 14, 12, 12, 14, 12, 12, 10, 14, 10, 18, 10, 26, 10],
     validations: [
-      { colName: "농장유형", options: ["일반농장", "동물복지농장"] },
-      { colName: "가공여부", options: ["구운란", "생란", "액란", "기타"] },
+      { colName: "농장유형", options: ["일반농장", "계약사육농장"] },
+      { colName: "가공", options: ["구운란", "생란", "반숙", "기타"] },
       { colName: "난중", options: ["왕란", "특란", "대란", "중란", "소란"] },
       { colName: "활성여부", options: ["유", "무"] },
     ],
   });
 
   const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_계란재고_입력서식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbookBuffer(`HaemilERP_계란재고_입력양식_${todayYMD()}.xlsx`, buf);
 }
 
 export async function downloadProductLotTemplate() {
   const wb = new ExcelJS.Workbook();
   buildTemplateSheet(wb, {
-    title: "제품재고(ProductLot) 입력 서식",
-    headers: ["ID", "제품ID", "계란재고ID", "수량", "위치", "메모", "활성여부"],
+    title: "제품재고(ProductLot) 입력 양식",
+    headers: ["제품재고ID", "제품ID", "계란재고ID", "수량", "위치", "메모", "활성여부"],
     colWidths: [10, 12, 12, 10, 18, 26, 10],
     validations: [{ colName: "활성여부", options: ["유", "무"] }],
   });
 
   const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품재고_입력서식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbookBuffer(`HaemilERP_제품재고_입력양식_${todayYMD()}.xlsx`, buf);
 }
 
 // 변경내역은 입력(업로드) 없이, 메모 업데이트용 템플릿만 제공(선택)
@@ -933,15 +933,15 @@ export function parseEggLotAOA(aoa) {
   const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID"]);
-  const farmIdx = idxOfHeader(headers, ["farm", "농장id", "농장ID"]);
+  const idIdx = idxOfHeader(headers, ["id", "ID", "계란재고ID"]);
+  const farmIdx = idxOfHeader(headers, ["farm", "농장ID"]);
   const recvIdx = idxOfHeader(headers, ["receiving_date", "입고일"]);
   const shellIdx = idxOfHeader(headers, ["shell_number", "난각번호"]);
   const breedIdx = idxOfHeader(headers, ["breeding_number", "사육번호"]);
   const farmTypeIdx = idxOfHeader(headers, ["farm_type", "농장유형"]);
   const ageIdx = idxOfHeader(headers, ["age_weeks", "주령", "주령(주)"]);
-  const eggTypeIdx = idxOfHeader(headers, ["egg_type", "가공여부"]);
-  const weightIdx = idxOfHeader(headers, ["egg_weight", "난중"]);
+  const eggTypeIdx = idxOfHeader(headers, ["egg_type", "가공"]);
+  const weightIdx = idxOfHeader(headers, ["egg_weight", "난중", "중량"]);
   const layingIdx = idxOfHeader(headers, ["laying_date", "산란일"]);
   const gradeIdx = idxOfHeader(headers, ["egg_grade", "등급"]);
   const locIdx = idxOfHeader(headers, ["location", "위치"]);
@@ -1021,9 +1021,9 @@ export function parseProductLotAOA(aoa) {
   const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID"]);
-  const productIdx = idxOfHeader(headers, ["product", "제품id", "제품ID"]);
-  const eggLotIdx = idxOfHeader(headers, ["egg_lot", "계란재고id", "계란재고ID"]);
+  const idIdx = idxOfHeader(headers, ["id", "ID", "제품재고ID"]);
+  const productIdx = idxOfHeader(headers, ["product", "제품ID"]);
+  const eggLotIdx = idxOfHeader(headers, ["egg_lot", "계란재고ID"]);
   const qtyIdx = idxOfHeader(headers, ["quantity", "수량"]);
   const locIdx = idxOfHeader(headers, ["location", "위치"]);
   const memoIdx = idxOfHeader(headers, ["memo", "메모"]);
