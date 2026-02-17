@@ -111,7 +111,7 @@ export default function GoodsInventoryExcel() {
 
       {!!validRows.length && (
         <div style={{ marginTop: "var(--sp-14)" }}>
-          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>미리보기 (상위 20건)</div>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>미리보기</div>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -126,7 +126,7 @@ export default function GoodsInventoryExcel() {
                 </tr>
               </thead>
               <tbody>
-                {validRows.slice(0, 20).map((r) => (
+                {validRows.map((r) => (
                   <tr key={`${r.__rowNum}-${r.id ?? "new"}`}>
                     <td>{r.__rowNum}</td>
                     <td>{r.id ?? ""}</td>

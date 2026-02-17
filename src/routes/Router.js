@@ -13,7 +13,6 @@ import Purchase from "../pages/Purchase";
 
 import Employees from "../pages/hr/Employees";
 import AddEmployee from "../pages/hr/AddEmployee";
-import EditEmployee from "../pages/hr/EditEmployee";
 
 import CustomerInfo from "../pages/accounting/CustomerInfo";
 import FarmInfo from "../pages/accounting/FarmInfo";
@@ -40,10 +39,8 @@ export default function Router() {
             <Route path="/dashboard" element={<Dashboard />} />
 
             <Route path="/hr" element={<Employee />} />
-            <Route path="/hr/employees" element={<AdminRoute message="직원 목록은 관리자만 조회 가능합니다."><Employees /></AdminRoute>} />
+            <Route path="/hr/employees" element={<Employees />} />
             <Route path="/hr/add" element={<AdminRoute message="직원 등록은 관리자만 가능합니다."><AddEmployee /></AdminRoute>} />
-            <Route path="/hr/edit" element={<EditEmployee />} />
-            <Route path="/hr/edit/:id" element={<EditEmployee />} />
 
             <Route path="/accounting" element={<Accounting />} />
             <Route path="/accounting/customer-info" element={<CustomerInfo />} />

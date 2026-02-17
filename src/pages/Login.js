@@ -21,7 +21,7 @@ export default function Login() {
   return (
     <div className="login-wrapper">
       <div className="login-card">
-        <h2 className="login-title">Haemeel ERP</h2>
+        <h2 className="login-title">Haemil ERP</h2>
         <form className="login-form" onSubmit={onSubmit}>
           <input className="login-input" name="username" value={form.username} onChange={onChange} placeholder="ID" />
           <input className="login-input" type="password" name="password" value={form.password} onChange={onChange} placeholder="Password" />

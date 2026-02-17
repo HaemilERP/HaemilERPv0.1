@@ -544,15 +544,13 @@ export default function GoodsInventory() {
                 </div>
               </div>
 
-              <div className="modal-head" style={{ borderTop: "1px solid var(--color-border-soft)", borderBottom: "none" }}>
-                <div className="head-actions">
-                  <button className="btn secondary" type="button" onClick={closeModal} disabled={submitting}>
-                    취소
-                  </button>
-                  <button className="btn" type="submit" disabled={submitting}>
-                    {submitting ? "저장 중..." : "저장"}
-                  </button>
-                </div>
+              <div className="modal-foot">
+                <button className="btn secondary" type="button" onClick={closeModal} disabled={submitting}>
+                  취소
+                </button>
+                <button className="btn" type="submit" disabled={submitting}>
+                  {submitting ? "저장 중..." : "저장"}
+                </button>
               </div>
             </form>
           </div>

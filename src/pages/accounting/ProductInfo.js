@@ -575,8 +575,8 @@ export default function ProductInfo() {
                     <td><span className={`badge ${r.antibiotic_free ? "ok" : "no"}`}>{r.antibiotic_free ? "유" : "무"}</span></td>
                     <td><span className={`badge ${r.haccp ? "ok" : "no"}`}>{r.haccp ? "유" : "무"}</span></td>
                     <td><span className={`badge ${r.organic ? "ok" : "no"}`}>{r.organic ? "유" : "무"}</span></td>
-                  <td className="num-cell">{r.max_laying_days ?? "-"}</td>
-                  <td className="num-cell">{r.expiration_date ?? "-"}</td>
+                  <td className="num-cell" style={{ textAlign: "left" }}>{r.max_laying_days ?? "-"}</td>
+                  <td className="num-cell" style={{ textAlign: "left" }}>{r.expiration_date ?? "-"}</td>
                     <td style={{ textAlign: "center" }}>
                       <span className="row-actions">
                         <button className="btn small secondary" onClick={() => openEdit(r)}>수정</button>

@@ -2,8 +2,8 @@ import axios from "axios";
 import { API_BASE_URL, API_PATHS } from "../config/api";
 import { isJwtExpired } from "../utils/jwt";
 
-const ACCESS_KEY = "haemeel_access_token";
-const REFRESH_KEY = "haemeel_refresh_token";
+const ACCESS_KEY = "haemil_access_token";
+const REFRESH_KEY = "haemil_refresh_token";
 
 export function getStoredTokens() {
   return {

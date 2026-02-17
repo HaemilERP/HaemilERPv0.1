@@ -13,7 +13,7 @@ export default function Navbar() {
 
   return (
     <div className="top-navbar">
-      <div className="nav-logo">Haemeel ERP</div>
+      <div className="nav-logo">Haemil ERP</div>
 
       <div className="nav-menu">
         <NavLink to="/dashboard">대시보드</NavLink>

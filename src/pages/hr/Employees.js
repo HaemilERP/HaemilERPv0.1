@@ -1,8 +1,9 @@
 import "./Employees.css";
+import "../accounting/AccountingTable.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { deleteUser, listEmployees } from "../../services/userApi";
+import { deleteUser, listEmployees, updateUserPassword } from "../../services/userApi";
 import { getApiErrorMessage } from "../../utils/helpers";
 import Pagination from "../../components/common/Pagination";
 
@@ -15,6 +16,12 @@ export default function Employees() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingRow, setEditingRow] = useState(null);
+  const [pw1, setPw1] = useState("");
+  const [pw2, setPw2] = useState("");
+  const [modalError, setModalError] = useState("");
+  const [saving, setSaving] = useState(false);
 
   const [field, setField] = useState("ALL"); // ALL | USERNAME | ROLE
   const [q, setQ] = useState("");
@@ -105,7 +112,65 @@ export default function Employees() {
     });
   };
 
-  const onClickEdit = (id) => navigate(`/hr/edit/${id}`);
+  const onClickEdit = (row) => {
+    const canEdit = isAdmin || (user?.id != null && row?.id === user.id);
+    if (!canEdit) return;
+
+    setEditingRow(row || null);
+    setPw1("");
+    setPw2("");
+    setModalError("");
+    setModalOpen(true);
+  };
+
+  const closeModal = useCallback(() => {
+    if (saving) return;
+    setModalOpen(false);
+    setEditingRow(null);
+    setPw1("");
+    setPw2("");
+    setModalError("");
+  }, [saving]);
+
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen, closeModal]);
+
+  const onSubmitModal = async (e) => {
+    e.preventDefault();
+    if (!editingRow?.id) return;
+
+    setModalError("");
+
+    const nextPw = (pw1 || "").trim();
+    if (!nextPw || nextPw.length < 8) {
+      setModalError("비밀번호는 최소 8자 이상이어야 합니다.");
+      return;
+    }
+    if (nextPw !== pw2) {
+      setModalError("비밀번호 확인이 일치하지 않습니다.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await updateUserPassword(editingRow.id, nextPw);
+      await fetchRows();
+      setModalOpen(false);
+      setEditingRow(null);
+      setPw1("");
+      setPw2("");
+    } catch (e2) {
+      setModalError(getApiErrorMessage(e2));
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // ✅ 삭제 버튼 UX 개선: title/disabled 로직을 읽기 쉽게 분리
   const getDeleteMeta = (row) => {
@@ -340,7 +405,7 @@ export default function Employees() {
                       <button
                         type="button"
                         disabled={!canEdit}
-                        onClick={() => onClickEdit(r?.id)}
+                        onClick={() => onClickEdit(r)}
                         style={{
                           padding: "var(--sp-10) var(--sp-14)",
                           borderRadius: "var(--radius-sm)",
@@ -385,6 +450,68 @@ export default function Employees() {
 
       {/* ✅ 페이지네이션 */}
       <Pagination page={page} pageCount={pageCount} onChange={setPage} />
+
+      {modalOpen && (
+        <div className="modal-overlay" onMouseDown={closeModal}>
+          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
+            <form onSubmit={onSubmitModal}>
+              <div className="modal-head">
+                <h3 className="modal-title">직원 편집</h3>
+                <button className="btn secondary small" type="button" onClick={closeModal} disabled={saving}>
+                  닫기
+                </button>
+              </div>
+
+              <div className="modal-body">
+                {modalError && <div className="field-error" style={{ marginBottom: "var(--sp-10)" }}>{modalError}</div>}
+
+                <div className="modal-grid one">
+                  <div className="field">
+                    <div className="filter-label">ID</div>
+                    <input className="filter-input" value={editingRow?.username || ""} readOnly />
+                  </div>
+
+                  <div className="field">
+                    <div className="filter-label">권한</div>
+                    <input className="filter-input" value={editingRow?.role || ""} readOnly />
+                  </div>
+
+                  <div className="field">
+                    <div className="filter-label">새 비밀번호</div>
+                    <input
+                      className="filter-input"
+                      type="password"
+                      value={pw1}
+                      onChange={(e) => setPw1(e.target.value)}
+                      disabled={saving || authLoading}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <div className="filter-label">비밀번호 확인</div>
+                    <input
+                      className="filter-input"
+                      type="password"
+                      value={pw2}
+                      onChange={(e) => setPw2(e.target.value)}
+                      disabled={saving || authLoading}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="modal-foot">
+                <button className="btn secondary" type="button" onClick={closeModal} disabled={saving}>
+                  취소
+                </button>
+                <button className="btn" type="submit" disabled={saving || authLoading}>
+                  {saving ? "저장 중..." : "저장"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

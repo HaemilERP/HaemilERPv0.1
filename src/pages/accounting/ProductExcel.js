@@ -153,7 +153,7 @@ export default function ProductExcel() {
 
       {!!validRows.length && (
         <div style={{ marginTop: "var(--sp-14)" }}>
-          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>미리보기 (상위 20건)</div>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>미리보기</div>
           <div className="table-wrap">
             <table className="data-table">
               <thead>
@@ -171,7 +171,7 @@ export default function ProductExcel() {
                 </tr>
               </thead>
               <tbody>
-                {validRows.slice(0, 20).map((r) => (
+                {validRows.map((r) => (
                   <tr key={`${r.__rowNum}-${r.product_name}`}
                   >
                     <td>{r.__rowNum}</td>

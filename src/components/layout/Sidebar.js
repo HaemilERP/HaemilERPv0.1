@@ -51,7 +51,6 @@ export default function Sidebar() {
         links: [
           { to: "/hr/employees", label: "직원목록" },
           { to: "/hr/add", label: "직원등록" },
-          { to: "/hr/edit", label: "직원편집" },
         ],
       },
     ],
