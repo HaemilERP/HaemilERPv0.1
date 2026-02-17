@@ -1,10 +1,10 @@
-
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { listFarms, createFarm, patchFarm, deleteFarm } from "../../services/accountingApi";
-import { BOOL_OPTIONS, includesText, matchBool, parseDRFErrors } from "../../utils/helpers";
+import { includesText, matchBool, parseDRFErrors } from "../../utils/helpers";
+import { downloadFarmListXlsx } from "../../utils/excel";
 import "./AccountingTable.css";
 import SearchBar from "../../components/common/SearchBar";
-
+import Pagination from "../../components/common/Pagination";
 
 export default function FarmInfo() {
   const [rows, setRows] = useState([]);
@@ -20,28 +20,40 @@ export default function FarmInfo() {
   const [form, setForm] = useState({
     farm_name: "",
     shell_number: "",
-    egg_type: "",
+    farm_type: "",
     antibiotic_free: false,
     haccp: false,
     organic: false,
   });
 
+  // 농장유형: 2가지로 고정
+  const FARM_TYPES = ["일반농장", "동물복지농장"];
+
+  // 무항생제/HACCP/유기농 필터 옵션
+  const FLAG_OPTIONS = [
+    { value: "", label: "전체" },
+    { value: "true", label: "유" },
+    { value: "false", label: "무" },
+  ];
+
   // 상단 검색
   const [searchField, setSearchField] = useState("all");
   const [searchText, setSearchText] = useState("");
 
-  
+  // Pagination
+  const [page, setPage] = useState(1);
+  const pageSize = 10;
 
   const SEARCH_FIELDS = [
     { value: "all", label: "전체" },
     { value: "farm_name", label: "농장명" },
     { value: "shell_number", label: "난각번호" },
-    { value: "egg_type", label: "계란종류" },
+    { value: "farm_type", label: "농장유형" },
   ];
 // 좌측 필터
   const [fFarmName, setFFarmName] = useState("");
   const [fShellNumber, setFShellNumber] = useState("");
-  const [fEggType, setFEggType] = useState("");
+  const [fFarmType, setFFarmType] = useState("");
   const [fAntibioticFree, setFAntibioticFree] = useState("");
   const [fHaccp, setFHaccp] = useState("");
   const [fOrganic, setFOrganic] = useState("");
@@ -74,7 +86,7 @@ export default function FarmInfo() {
     setEditing(null);
     setFormErr("");
     setFieldErrs({});
-    setForm({ farm_name: "", shell_number: "", egg_type: "", antibiotic_free: false, haccp: false, organic: false });
+    setForm({ farm_name: "", shell_number: "", farm_type: "", antibiotic_free: false, haccp: false, organic: false });
     setModalOpen(true);
   }
 
@@ -85,7 +97,7 @@ export default function FarmInfo() {
     setForm({
       farm_name: row?.farm_name ?? "",
       shell_number: row?.shell_number ?? "",
-      egg_type: row?.egg_type ?? "",
+      farm_type: row?.farm_type ?? "",
       antibiotic_free: Boolean(row?.antibiotic_free),
       haccp: Boolean(row?.haccp),
       organic: Boolean(row?.organic),
@@ -93,10 +105,20 @@ export default function FarmInfo() {
     setModalOpen(true);
   }
 
-  function closeModal() {
+  const closeModal = useCallback(() => {
     if (submitting) return;
     setModalOpen(false);
-  }
+  }, [submitting]);
+
+  // ✅ ESC로 팝업 닫기
+  useEffect(() => {
+    if (!modalOpen) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") closeModal();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [modalOpen, closeModal]);
 
   async function onSubmit(e) {
     e.preventDefault();
@@ -107,7 +129,7 @@ export default function FarmInfo() {
     try {
       const farm_name = (form.farm_name || "").trim();
       const shell_number_raw = String(form.shell_number || "").trim();
-      const egg_type_raw = String(form.egg_type || "").trim();
+      const farm_type_raw = String(form.farm_type || "").trim();
 
       if (!farm_name) {
         setFieldErrs({ farm_name: "농장명을 입력해주세요." });
@@ -131,7 +153,7 @@ export default function FarmInfo() {
         haccp: Boolean(form.haccp),
         organic: Boolean(form.organic),
         ...(shell_number !== undefined ? { shell_number } : {}),
-        ...(egg_type_raw ? { egg_type: egg_type_raw } : {}),
+        ...(farm_type_raw ? { farm_type: farm_type_raw } : {}),
       };
 if (editing?.id != null) {
         await patchFarm(editing.id, payload);
@@ -171,6 +193,20 @@ if (editing?.id != null) {
     }
   }
 
+  function onExcelExport() {
+    const body = filtered.map((r) => [
+      r?.id ?? "",
+      r?.farm_name ?? "",
+      r?.shell_number ?? "",
+      r?.farm_type ?? "",
+      r?.antibiotic_free ? "유" : "무",
+      r?.haccp ? "유" : "무",
+      r?.organic ? "유" : "무",
+    ]);
+
+    downloadFarmListXlsx(body);
+  }
+
   const filtered = useMemo(() => {
     const q = searchText.trim();
 
@@ -178,7 +214,7 @@ if (editing?.id != null) {
       // 좌측 필터
       if (fFarmName && !includesText(r.farm_name, fFarmName)) return false;
       if (fShellNumber && !includesText(r.shell_number, fShellNumber)) return false;
-      if (fEggType && !includesText(r.egg_type, fEggType)) return false;
+      if (fFarmType && !includesText(r.farm_type, fFarmType)) return false;
       if (!matchBool(r.antibiotic_free, fAntibioticFree)) return false;
       if (!matchBool(r.haccp, fHaccp)) return false;
       if (!matchBool(r.organic, fOrganic)) return false;
@@ -189,10 +225,10 @@ if (editing?.id != null) {
         return (
           includesText(r.farm_name, q) ||
           includesText(r.shell_number, q) ||
-          includesText(r.egg_type, q) ||
-          includesText(r.antibiotic_free ? "예" : "아니오", q) ||
-          includesText(r.haccp ? "예" : "아니오", q) ||
-          includesText(r.organic ? "예" : "아니오", q)
+          includesText(r.farm_type, q) ||
+          includesText(r.antibiotic_free ? "유" : "무", q) ||
+          includesText(r.haccp ? "유" : "무", q) ||
+          includesText(r.organic ? "유" : "무", q)
         );
       }
       return includesText(r[searchField], q);
@@ -203,18 +239,36 @@ if (editing?.id != null) {
     searchText,
     fFarmName,
     fShellNumber,
-    fEggType,
+    fFarmType,
     fAntibioticFree,
     fHaccp,
     fOrganic,
   ]);
+
+  // 필터/검색이 바뀌면 첫 페이지로
+  useEffect(() => {
+    setPage(1);
+  }, [searchField, searchText, fFarmName, fShellNumber, fFarmType, fAntibioticFree, fHaccp, fOrganic]);
+
+  const pageCount = useMemo(() => {
+    return Math.max(1, Math.ceil(filtered.length / pageSize));
+  }, [filtered.length]);
+
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), pageCount));
+  }, [pageCount]);
+
+  const pagedRows = useMemo(() => {
+    const start = (page - 1) * pageSize;
+    return filtered.slice(start, start + pageSize);
+  }, [filtered, page]);
 
   function resetFilters() {
     setSearchField("all");
     setSearchText("");
     setFFarmName("");
     setFShellNumber("");
-    setFEggType("");
+    setFFarmType("");
     setFAntibioticFree("");
     setFHaccp("");
     setFOrganic("");
@@ -236,14 +290,19 @@ if (editing?.id != null) {
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">계란종류</div>
-          <input className="filter-input" value={fEggType} onChange={(e) => setFEggType(e.target.value)} placeholder="계란종류" />
+          <div className="filter-label">농장유형</div>
+          <select className="filter-select" value={fFarmType} onChange={(e) => setFFarmType(e.target.value)}>
+            <option value="">전체</option>
+            {FARM_TYPES.map((t) => (
+              <option key={t} value={t}>{t}</option>
+            ))}
+          </select>
         </div>
 
         <div className="filter-group">
           <div className="filter-label">무항생제 인증</div>
           <select className="filter-select" value={fAntibioticFree} onChange={(e) => setFAntibioticFree(e.target.value)}>
-            {BOOL_OPTIONS.map((o) => (
+            {FLAG_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -252,7 +311,7 @@ if (editing?.id != null) {
         <div className="filter-group">
           <div className="filter-label">HACCP</div>
           <select className="filter-select" value={fHaccp} onChange={(e) => setFHaccp(e.target.value)}>
-            {BOOL_OPTIONS.map((o) => (
+            {FLAG_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -261,7 +320,7 @@ if (editing?.id != null) {
         <div className="filter-group">
           <div className="filter-label">유기농</div>
           <select className="filter-select" value={fOrganic} onChange={(e) => setFOrganic(e.target.value)}>
-            {BOOL_OPTIONS.map((o) => (
+            {FLAG_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>{o.label}</option>
             ))}
           </select>
@@ -281,6 +340,10 @@ if (editing?.id != null) {
               + 농장 추가
             </button>
 
+            <button className="btn secondary" onClick={onExcelExport}>
+              엑셀 출력
+            </button>
+
             <SearchBar
               field={searchField}
               setField={setSearchField}
@@ -293,7 +356,7 @@ if (editing?.id != null) {
           </div>
         </div>
 
-        <div className="muted" style={{ marginBottom: 10 }}>
+        <div className="muted" style={{ marginBottom: "var(--sp-10)" }}>
           {loading ? "불러오는 중..." : err ? err : `총 ${filtered.length}건`}
         </div>
 
@@ -301,32 +364,32 @@ if (editing?.id != null) {
           <table className="data-table">
             <thead>
               <tr>
-                <th>농장명</th>
+                <th>농장</th>
                 <th>난각번호</th>
-                <th>계란종류</th>
+                <th>농장유형</th>
                 <th>무항생제</th>
                 <th>HACCP</th>
                 <th>유기농</th>
-                <th style={{ textAlign: "right" }}>관리</th>
+                <th style={{ textAlign: "center" }}>관리</th>
               </tr>
             </thead>
             <tbody>
               {!loading && filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="muted" style={{ padding: 18 }}>
+                  <td colSpan={7} className="muted" style={{ padding: "var(--sp-18)" }}>
                     결과가 없습니다.
                   </td>
                 </tr>
               ) : (
-                filtered.map((r) => (
+                pagedRows.map((r) => (
                   <tr key={r.id ?? `${r.farm_name}-${r.shell_number}`}>
-                    <td>{r.farm_name}</td>
+                    <td className="wrap-cell">{`${r.farm_name ?? ""}(${r.id ?? ""})`}</td>
                     <td>{r.shell_number ?? "-"}</td>
-                    <td>{r.egg_type ?? "-"}</td>
-                    <td><span className={`badge ${r.antibiotic_free ? "ok" : "no"}`}>{r.antibiotic_free ? "예" : "아니오"}</span></td>
-                    <td><span className={`badge ${r.haccp ? "ok" : "no"}`}>{r.haccp ? "예" : "아니오"}</span></td>
-                    <td><span className={`badge ${r.organic ? "ok" : "no"}`}>{r.organic ? "예" : "아니오"}</span></td>
-                    <td style={{ textAlign: "right" }}>
+                    <td>{r.farm_type ?? "-"}</td>
+                    <td><span className={`badge ${r.antibiotic_free ? "ok" : "no"}`}>{r.antibiotic_free ? "유" : "무"}</span></td>
+                    <td><span className={`badge ${r.haccp ? "ok" : "no"}`}>{r.haccp ? "유" : "무"}</span></td>
+                    <td><span className={`badge ${r.organic ? "ok" : "no"}`}>{r.organic ? "유" : "무"}</span></td>
+                    <td style={{ textAlign: "center" }}>
                       <span className="row-actions">
                         <button className="btn small secondary" onClick={() => openEdit(r)}>수정</button>
                         <button className="btn small danger" onClick={() => onDelete(r)}>삭제</button>
@@ -338,6 +401,8 @@ if (editing?.id != null) {
             </tbody>
           </table>
         </div>
+
+        <Pagination page={page} pageCount={pageCount} onChange={setPage} />
       </section>
 
       {modalOpen && (
@@ -349,7 +414,7 @@ if (editing?.id != null) {
             </div>
             <form onSubmit={onSubmit}>
               <div className="modal-body">
-                {formErr && <div className="field-error" style={{ marginBottom: 10 }}>{formErr}</div>}
+                {formErr && <div className="field-error" style={{ marginBottom: "var(--sp-10)" }}>{formErr}</div>}
 
                 <div className="modal-grid">
                   <div className="field">
@@ -381,17 +446,21 @@ if (editing?.id != null) {
                   </div>
 
                   <div className="field">
-                    <div className="filter-label">계란종류</div>
-                    <input
-                      className="filter-input"
-                      value={form.egg_type}
+                    <div className="filter-label">농장유형</div>
+                    <select
+                      className="filter-select"
+                      value={form.farm_type}
                       onChange={(e) => {
-                        setForm((p) => ({ ...p, egg_type: e.target.value }));
-                        setFieldErrs((p) => ({ ...p, egg_type: "" }));
+                        setForm((p) => ({ ...p, farm_type: e.target.value }));
+                        setFieldErrs((p) => ({ ...p, farm_type: "" }));
                       }}
-                      placeholder="계란종류"
-                    />
-                    {fieldErrs.egg_type && <div className="field-error">{fieldErrs.egg_type}</div>}
+                    >
+                      <option value="">선택</option>
+                      {FARM_TYPES.map((t) => (
+                        <option key={t} value={t}>{t}</option>
+                      ))}
+                    </select>
+                    {fieldErrs.farm_type && <div className="field-error">{fieldErrs.farm_type}</div>}
                   </div>
 
                   <div className="field">

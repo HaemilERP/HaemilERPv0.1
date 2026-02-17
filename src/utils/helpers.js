@@ -124,13 +124,60 @@ export function matchBool(value, filterValue) {
   return Boolean(value) === want;
 }
 
-export function farmsToText(farms) {
+export function includesAllTokens(hay, query) {
+  const tokens = asText(query)
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return true;
+  const h = asText(hay).toLowerCase();
+  return tokens.every((t) => h.includes(t));
+}
+
+// Like includesAllTokens, but matches if ANY token exists (OR)
+export function includesAnyTokens(hay, query) {
+  const tokens = asText(query)
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+  if (tokens.length === 0) return true;
+  const h = asText(hay).toLowerCase();
+  return tokens.some((t) => h.includes(t));
+}
+
+function formatFarmLabel(farmName, farmId) {
+  const name = asText(farmName).trim();
+  const id = farmId === null || farmId === undefined ? "" : asText(farmId).trim();
+  if (name && id) return `${name}(${id})`;
+  return name || id;
+}
+
+export function farmsToText(farms, farmsById) {
   if (!farms) return "";
+  const byId = farmsById || null;
+
+  const toLabel = (f) => {
+    if (f === null || f === undefined) return "";
+    // object form: {id, farm_name, ...}
+    if (typeof f === "object") {
+      const id = f.id ?? f.farm_id ?? f.pk;
+      const name = f.farm_name ?? f.name ?? f.title;
+      return formatFarmLabel(name, id);
+    }
+
+    // primitive id or name
+    const id = asText(f).trim();
+    if (byId && id && byId[id]) {
+      const found = byId[id];
+      return formatFarmLabel(found?.farm_name ?? found?.name ?? found?.title, found?.id ?? id);
+    }
+    return id;
+  };
+
   if (Array.isArray(farms)) {
-    return farms
-      .map((f) => (typeof f === "object" ? f.farm_name ?? f.name ?? f.id : f))
-      .filter(Boolean)
-      .join(", ");
+    return farms.map(toLabel).filter(Boolean).join(", ");
   }
-  return asText(farms);
+  return toLabel(farms);
 }

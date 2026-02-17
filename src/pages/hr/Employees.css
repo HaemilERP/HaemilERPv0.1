@@ -1,0 +1,18 @@
+
+/* ===== 직원 목록 테이블 간격 축소 ===== */
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  padding: var(--sp-6) var(--sp-10);
+  font-size: var(--fs-14);
+  line-height: 1.3;
+}
+
+.table tr {
+  height: var(--ctl-36);
+}

@@ -25,7 +25,7 @@ export default function Login() {
         <form className="login-form" onSubmit={onSubmit}>
           <input className="login-input" name="username" value={form.username} onChange={onChange} placeholder="ID" />
           <input className="login-input" type="password" name="password" value={form.password} onChange={onChange} placeholder="Password" />
-          {error && <div style={{ color: "#ef4444", fontSize: 13 }}>{error}</div>}
+          {error && <div style={{ color: "#ef4444", fontSize: "var(--fs-13)" }}>{error}</div>}
           <button className="login-button" type="submit" disabled={authLoading}>
             {authLoading ? "로그인 중..." : "로그인"}
           </button>

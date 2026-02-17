@@ -29,10 +29,12 @@ export default function AddEmployee() {
     // 프론트에서 1차 검증 (서버 400 줄이기)
     if (!form.username?.trim()) {
       setFieldErrors({ username: "ID(Username)을 입력해 주세요." });
+      setSubmitting(false);
       return;
     }
     if (!form.password || form.password.length < 8) {
       setFieldErrors({ password: "비밀번호는 최소 8자 이상이어야 합니다." });
+      setSubmitting(false);
       return;
     }
 
@@ -57,42 +59,45 @@ export default function AddEmployee() {
     <div className="page-card">
       <h2 style={{ margin: 0 }}>직원 등록</h2>
 
-      <form onSubmit={onSubmit} style={{ marginTop: 14, display: "grid", gap: 12, maxWidth: 420 }}>
-        <div style={{ display: "grid", gap: 6 }}>
+      <form
+        onSubmit={onSubmit}
+        style={{ marginTop: "var(--sp-14)", display: "grid", gap: "var(--sp-12)", maxWidth: "clamp(360px, calc(420 * var(--ui)), 520px)" }}
+      >
+        <div style={{ display: "grid", gap: "var(--sp-6)" }}>
           <label>ID</label>
           <input name="username" value={form.username} onChange={onChange} />
           {fieldErrors.username && (
-            <div style={{ color: "#ef4444", fontSize: 13 }}>{fieldErrors.username}</div>
+            <div style={{ color: "#ef4444", fontSize: "var(--fs-13)" }}>{fieldErrors.username}</div>
           )}
         </div>
 
-        <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ display: "grid", gap: "var(--sp-6)" }}>
           <label>Password</label>
           <input type="password" name="password" value={form.password} onChange={onChange} />
           {fieldErrors.password && (
-            <div style={{ color: "#ef4444", fontSize: 13 }}>{fieldErrors.password}</div>
+            <div style={{ color: "#ef4444", fontSize: "var(--fs-13)" }}>{fieldErrors.password}</div>
           )}
         </div>
 
-        <div style={{ display: "grid", gap: 6 }}>
+        <div style={{ display: "grid", gap: "var(--sp-6)" }}>
           <label>Role</label>
           <select name="role" value={form.role} onChange={onChange}>
             <option value="MANAGER">MANAGER</option>
             <option value="ADMIN">ADMIN</option>
           </select>
           {fieldErrors.role && (
-            <div style={{ color: "#ef4444", fontSize: 13 }}>{fieldErrors.role}</div>
+            <div style={{ color: "#ef4444", fontSize: "var(--fs-13)" }}>{fieldErrors.role}</div>
           )}
         </div>
 
-        {errorMessage && <div style={{ color: "#ef4444", fontSize: 13 }}>{errorMessage}</div>}
+        {errorMessage && <div style={{ color: "#ef4444", fontSize: "var(--fs-13)" }}>{errorMessage}</div>}
 
         <button
           type="submit"
           disabled={submitting}
           style={{
-            padding: "10px 12px",
-            borderRadius: 10,
+            padding: "var(--sp-10) var(--sp-12)",
+            borderRadius: "var(--radius-sm)",
             border: "none",
             background: "#00a990",
             color: "#fff",

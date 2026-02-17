@@ -1,5 +1,6 @@
 import { createContext, useContext, useMemo, useState, useEffect } from "react";
 import { getInitialAuthState, loginRequest, logoutRequest } from "../services/authApi";
+import { getApiErrorMessage } from "../utils/helpers";
 import { api } from "../services/apiClient";
 import { API_PATHS } from "../config/api";
 
@@ -64,11 +65,7 @@ export const AuthProvider = ({ children }) => {
       setIsAuthenticated(false);
       return {
         ok: false,
-        message:
-          e?.response?.data?.detail ||
-          e?.response?.data?.message ||
-          e?.message ||
-          "Login failed",
+        message: getApiErrorMessage(e, e?.message || "Login failed"),
       };
     } finally {
       setAuthLoading(false);
