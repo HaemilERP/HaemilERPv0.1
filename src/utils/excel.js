@@ -1,8 +1,4 @@
-import ExcelJS from "exceljs/dist/exceljs.min.js";
-
-// -----------------------
-// Generic helpers
-// -----------------------
+import ExcelJS from "exceljs";
 
 export function todayYMD() {
   const d = new Date();
