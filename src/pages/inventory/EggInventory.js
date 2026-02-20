@@ -494,7 +494,7 @@ export default function EggInventory() {
                 <th>입고일</th>
                 <th>산란일</th>
                 <th>난중</th>
-                <th>가공</th>
+                <th>계란유형</th>
                 <th>등급</th>
                 <th>수량</th>
                 <th>위치</th>
