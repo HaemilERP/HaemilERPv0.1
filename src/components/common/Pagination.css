@@ -121,7 +121,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  color: #64748b;
+  color: var(--color-muted);
   font-weight: 900;
 }
 /* =========================

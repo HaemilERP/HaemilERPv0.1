@@ -109,7 +109,10 @@ export default function Sidebar() {
       {
         group: "purchase",
         title: "발주",
-        links: [{ to: "/purchase", label: "발주" }],
+        links: [
+          { to: "/purchase", label: "발주" },
+          { to: "/purchase/egg-matching", label: "원란매칭" },
+        ],
       },
     ],
   };
