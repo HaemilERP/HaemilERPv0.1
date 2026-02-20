@@ -24,7 +24,8 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-8);
-  --page-jump-control-w: clamp(46px, calc(56 * var(--ui)), 66px);
+  --page-jump-control-px: var(--sp-12);
+  --page-jump-control-w: calc((2em) + (var(--page-jump-control-px) * 2));
 }
 /* =========================
    Shared Control Styles
@@ -59,11 +60,11 @@
 .page-jump-input {
   width: var(--page-jump-control-w);
   box-sizing: border-box;
-  padding: 0 var(--sp-10);
-  border-radius: var(--radius-md);
+  padding: 0 var(--page-jump-control-px);
+  border-radius: var(--radius-sm);
   border: 1px solid var(--color-border);
   text-align: center;
-  font-weight: 900;
+  font-weight: 800;
   appearance: textfield;
 }
 
@@ -88,7 +89,8 @@
 .page-jump-btn {
   width: var(--page-jump-control-w);
   box-sizing: border-box;
-  padding: 0;
+  padding: 0 var(--page-jump-control-px);
+  font-weight: 800;
   display: inline-flex;
   align-items: center;
   justify-content: center;
