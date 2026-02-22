@@ -49,6 +49,12 @@
 /* 전역 .btn 을 사용하고, 로그인 버튼은 폭만 100%로 */
 .login-button {
   width: 100%;
+  /* 로그인 버튼만 hover 효과 허용 */
+  transition: background-color 120ms ease;
+}
+
+.login-button:not(:disabled):hover {
+  background: var(--color-brand);
 }
 
 .login-footer {

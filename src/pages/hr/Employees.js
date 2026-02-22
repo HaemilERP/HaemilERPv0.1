@@ -6,6 +6,7 @@ import { useAuth } from "../../context/AuthContext";
 import { deleteUser, listEmployees, updateUserPassword } from "../../services/userApi";
 import { getApiErrorMessage } from "../../utils/helpers";
 import Pagination from "../../components/common/Pagination";
+import SearchBar from "../../components/common/SearchBar";
 
 export default function Employees() {
   const { user, authLoading } = useAuth();
@@ -211,6 +212,15 @@ export default function Employees() {
     await fetchRows();
   };
 
+  const SEARCH_FIELDS = useMemo(
+    () => [
+      { value: "ALL", label: "전체" },
+      { value: "USERNAME", label: "아이디" },
+      { value: "ROLE", label: "권한" },
+    ],
+    []
+  );
+
   return (
     <div className="page-card">
       <h2 style={{ margin: 0 }}>직원 목록</h2>
@@ -227,31 +237,17 @@ export default function Employees() {
         }}
       >
         <div style={{ display: "flex", gap: "var(--sp-10)", alignItems: "center", flexWrap: "wrap" }}>
-          <select
-            value={field}
-            onChange={(e) => setField(e.target.value)}
-            className="filter-select"
-            style={{ width: "auto", minWidth: "clamp(110px, calc(120 * var(--ui)), 150px)" }}
-          >
-            <option value="ALL">전체</option>
-            <option value="USERNAME">아이디</option>
-            <option value="ROLE">권한</option>
-          </select>
-
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="검색어"
-            className="filter-input"
-            style={{ width: "var(--w-330)" }}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") onSearch();
-            }}
+          {/* 고객사정보 페이지와 동일하게: 검색 중엔 버튼 disabled */}
+          <SearchBar
+            field={field}
+            setField={setField}
+            text={q}
+            setText={setQ}
+            fields={SEARCH_FIELDS}
+            loading={loading}
+            onSearch={onSearch}
+            inputWidth="var(--w-330)"
           />
-
-          <button type="button" onClick={onSearch} className="btn small">
-            검색
-          </button>
         </div>
 
         {isAdmin && (
