@@ -35,7 +35,8 @@ export default function SearchBar({
         }}
       />
 
-      <button className="btn" type="button" disabled={loading} onClick={onSearch}>
+      {/* 검색 버튼은 기존(작은) 사이즈로 유지 */}
+      <button className="btn small" type="button" disabled={loading} onClick={onSearch}>
         검색
       </button>
     </div>

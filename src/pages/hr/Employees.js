@@ -27,7 +27,6 @@ export default function Employees() {
   const [q, setQ] = useState("");
 
   const [sort, setSort] = useState({ key: "id", dir: "asc" });
-  const [fieldFocus, setFieldFocus] = useState(false);
 
   // Pagination
   const [page, setPage] = useState(1);
@@ -204,62 +203,8 @@ export default function Employees() {
   const canEditRow = (row) => isAdmin || (user?.id != null && row?.id === user.id);
 
   // --- UI 스타일(기존 유지) ---
-  const borderGray = "#e2e8f0";
-  const focusRing = "var(--focus-ring)";
-
-  const fieldSelectStyle = {
-    height: "var(--ctl-40)",
-    borderRadius: "var(--radius-md)",
-    padding: "0 var(--sp-14)",
-    background: "white",
-    outline: "none",
-    minWidth: "clamp(110px, calc(120 * var(--ui)), 150px)",
-    boxSizing: "border-box",
-    border: `1px solid ${fieldFocus ? "#0f172a" : borderGray}`,
-    boxShadow: fieldFocus ? focusRing : "none",
-    transition: "border-color 120ms ease, box-shadow 120ms ease",
-    cursor: "pointer",
-  };
-
-  const searchInputStyle = {
-    height: "var(--ctl-40)",
-    width: "var(--w-330)",
-    borderRadius: "var(--radius-md)",
-    padding: "0 var(--sp-14)",
-    border: `1px solid ${borderGray}`,
-    background: "white",
-    outline: "none",
-    boxSizing: "border-box",
-    transition: "border-color 120ms ease, box-shadow 120ms ease",
-  };
-
-  const searchBtnStyle = {
-    height: "var(--ctl-40)",
-    padding: "0 var(--sp-16)",
-    borderRadius: "var(--radius-md)",
-    border: "none",
-    background: "#00a990",
-    color: "white",
-    cursor: "pointer",
-    display: "inline-flex",
-    alignItems: "center",
-    justifyContent: "center",
-    whiteSpace: "nowrap",
-  };
-
-  const addBtnSecondaryStyle = {
-    height: "var(--ctl-40)",
-    padding: "0 var(--sp-16)",
-    borderRadius: "var(--radius-md)",
-    border: "none",
-    background: "#e2e8f0",
-    color: "#0f172a",
-    fontWeight: 900,
-    cursor: authLoading ? "not-allowed" : "pointer",
-    boxShadow: "none",
-    opacity: authLoading ? 0.9 : 1,
-    whiteSpace: "nowrap",
-  };
+  // Employees 페이지는 기존 UI/기능을 유지하되,
+  // 버튼/폼 컨트롤은 전역(.btn/.filter-*) 스타일로 통일합니다.
 
   // ✅ 검색 클릭/엔터 시마다 서버에서 다시 목록 갱신
   const onSearch = async () => {
@@ -285,9 +230,8 @@ export default function Employees() {
           <select
             value={field}
             onChange={(e) => setField(e.target.value)}
-            style={fieldSelectStyle}
-            onFocus={() => setFieldFocus(true)}
-            onBlur={() => setFieldFocus(false)}
+            className="filter-select"
+            style={{ width: "auto", minWidth: "clamp(110px, calc(120 * var(--ui)), 150px)" }}
           >
             <option value="ALL">전체</option>
             <option value="USERNAME">아이디</option>
@@ -298,21 +242,14 @@ export default function Employees() {
             value={q}
             onChange={(e) => setQ(e.target.value)}
             placeholder="검색어"
-            style={searchInputStyle}
-            onFocus={(e) => {
-              e.currentTarget.style.borderColor = "#0f172a";
-              e.currentTarget.style.boxShadow = focusRing;
-            }}
-            onBlur={(e) => {
-              e.currentTarget.style.borderColor = borderGray;
-              e.currentTarget.style.boxShadow = "none";
-            }}
+            className="filter-input"
+            style={{ width: "var(--w-330)" }}
             onKeyDown={(e) => {
               if (e.key === "Enter") onSearch();
             }}
           />
 
-          <button type="button" onClick={onSearch} style={searchBtnStyle}>
+          <button type="button" onClick={onSearch} className="btn small">
             검색
           </button>
         </div>
@@ -322,7 +259,7 @@ export default function Employees() {
             type="button"
             onClick={() => navigate("/hr/add")}
             disabled={authLoading}
-            style={addBtnSecondaryStyle}
+            className="btn secondary"
           >
             + 데이터 추가
           </button>
@@ -402,43 +339,27 @@ export default function Employees() {
                     </td>
 
                     <td style={{ textAlign: "center" }}>
-                      <button
-                        type="button"
-                        disabled={!canEdit}
-                        onClick={() => onClickEdit(r)}
-                        style={{
-                          padding: "var(--sp-10) var(--sp-14)",
-                          borderRadius: "var(--radius-sm)",
-                          border: "none",
-                          background: canEdit ? "#e2e8f0" : "#e5e7eb",
-                          color: "#0f172a",
-                          cursor: canEdit ? "pointer" : "not-allowed",
-                          marginRight: "var(--sp-10)",
-                          fontWeight: 900,
-                        }}
-                        title={!canEdit ? "본인 비밀번호만 변경 가능합니다." : ""}
-                      >
-                        수정
-                      </button>
+                      <div className="row-actions" style={{ justifyContent: "center" }}>
+                        <button
+                          type="button"
+                          disabled={!canEdit}
+                          onClick={() => onClickEdit(r)}
+                          className="btn small secondary"
+                          title={!canEdit ? "본인 비밀번호만 변경 가능합니다." : ""}
+                        >
+                          수정
+                        </button>
 
-                      <button
-                        type="button"
-                        disabled={del.disabled}
-                        onClick={() => onDelete(r?.id, r?.username)}
-                        style={{
-                          padding: "var(--sp-10) var(--sp-14)",
-                          borderRadius: "var(--radius-sm)",
-                          border: "none",
-                          background: "#ef4444",
-                          color: "#fff",
-                          cursor: del.disabled ? "not-allowed" : "pointer",
-                          opacity: del.disabled ? 0.5 : 1,
-                          fontWeight: 900,
-                        }}
-                        title={del.title}
-                      >
-                        삭제
-                      </button>
+                        <button
+                          type="button"
+                          disabled={del.disabled}
+                          onClick={() => onDelete(r?.id, r?.username)}
+                          className="btn small danger"
+                          title={del.title}
+                        >
+                          삭제
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );

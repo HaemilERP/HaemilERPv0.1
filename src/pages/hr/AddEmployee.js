@@ -115,18 +115,7 @@ export default function AddEmployee() {
 
         {errorMessage && <div style={{ color: "#ef4444", fontSize: 13 }}>{errorMessage}</div>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          style={{
-            padding: "10px 12px",
-            borderRadius: 10,
-            border: "none",
-            background: "#00a990",
-            color: "#fff",
-            cursor: submitting ? "not-allowed" : "pointer",
-          }}
-        >
+        <button type="submit" className="btn" disabled={submitting} style={{ width: "100%" }}>
           {submitting ? "Saving..." : "저장"}
         </button>
       </form>

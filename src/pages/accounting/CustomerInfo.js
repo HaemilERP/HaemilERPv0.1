@@ -393,7 +393,7 @@ export default function CustomerInfo() {
                     <td>{r.max_laying_days}</td>
                     <td>{r.expiration_date}</td>
                     <td style={{ textAlign: "center" }}>
-                      <span className="row-actions">
+                      <span className="row-actions actions-center">
                         <button className="btn small secondary" onClick={() => openEdit(r)}>수정</button>
                         <button className="btn small danger" onClick={() => onDelete(r)}>삭제</button>
                       </span>

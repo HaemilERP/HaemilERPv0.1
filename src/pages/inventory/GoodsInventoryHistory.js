@@ -125,18 +125,40 @@ export default function GoodsInventoryHistory() {
     { value: "id", label: "제품 변경내역ID" },
   ];
 
-  const fetchSupport = async () => {
-    try {
-      const [p, lots, egg] = await Promise.all([listProducts(), listProductLots(), listEggLots()]);
-      setProducts(p);
-      setProductLots(lots);
-      setEggLots(egg);
-    } catch {
-      // optional
+  // NOTE:
+  // 이 페이지는 변경내역(rows)와, 표시용 참조 데이터(products/productLots/eggLots)를 각각 비동기로 불러옵니다.
+  // 참조 데이터가 늦게 도착하면 처음엔 ID가 보였다가 나중에 이름으로 바뀌는 "깜빡임"이 생길 수 있어,
+  // 초기 진입 시에는 4개 API를 함께 받아서(setState) 한 번에 렌더되도록 처리합니다.
+  const loadInitial = async () => {
+    setLoading(true);
+    setErr("");
+
+    const [histRes, prodRes, lotRes, eggRes] = await Promise.allSettled([
+      listProductLotHistories(),
+      listProducts(),
+      listProductLots(),
+      listEggLots(),
+    ]);
+
+    // histories는 필수
+    if (histRes.status === "fulfilled") {
+      setRows(histRes.value);
+    } else {
+      const e = histRes.reason;
+      setErr(e?.response?.data?.detail || "제품재고 변경내역을 불러오지 못했습니다.");
+      setRows([]);
     }
+
+    // support는 선택 (실패해도 페이지는 동작)
+    if (prodRes.status === "fulfilled") setProducts(prodRes.value);
+    if (lotRes.status === "fulfilled") setProductLots(lotRes.value);
+    if (eggRes.status === "fulfilled") setEggLots(eggRes.value);
+
+    setLoading(false);
   };
 
   const fetchRows = async () => {
+    // support 데이터는 이미 로딩돼있으므로, 검색/저장 후 갱신은 변경내역만 다시 불러옵니다.
     setLoading(true);
     setErr("");
     try {
@@ -150,8 +172,7 @@ export default function GoodsInventoryHistory() {
   };
 
   useEffect(() => {
-    fetchRows();
-    fetchSupport();
+    loadInitial();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

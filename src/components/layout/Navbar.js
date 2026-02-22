@@ -11,25 +11,46 @@ export default function Navbar() {
     navigate("/", { replace: true });
   };
 
+  const username = user?.username || "user";
+  const role = user?.role ? String(user.role).toUpperCase() : "";
+
   return (
     <div className="top-navbar">
       <div className="nav-logo">Haemil ERP</div>
 
       <div className="nav-menu">
-        <NavLink to="/dashboard">대시보드</NavLink>
-        <NavLink to="/hr">인사</NavLink>
-        <NavLink to="/accounting">정보</NavLink>
-        <NavLink to="/inventory">재고</NavLink>
-        <NavLink to="/purchase">발주</NavLink>
+        <NavLink end to="/dashboard" className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          대시보드
+        </NavLink>
+        <NavLink to="/hr" className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          인사관리
+        </NavLink>
+        <NavLink to="/accounting" className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          정보관리
+        </NavLink>
+        <NavLink to="/inventory" className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          재고관리
+        </NavLink>
+        <NavLink to="/purchase" className={({ isActive }) => (isActive ? "active" : "")}
+        >
+          발주관리
+        </NavLink>
       </div>
 
       <div className="nav-right">
-        <span className="user-pill">
-          {user?.username || "user"} {user?.role ? `(${user.role})` : ""}
-        </span>
-        <button className="logout-btn" onClick={onLogout}>
-          Logout
-        </button>
+        <div className="nav-user">
+          <span className="nav-user-label">
+            {username}
+            {role ? <span className="nav-user-role"> ({role})</span> : null}
+          </span>
+          <button className="btn secondary small no-hover nav-logout" onClick={onLogout}>
+            로그아웃
+          </button>
+        </div>
       </div>
     </div>
   );

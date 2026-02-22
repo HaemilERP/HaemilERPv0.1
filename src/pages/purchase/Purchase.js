@@ -65,8 +65,8 @@ export default function Purchase() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // 출고일자는 사용자가 직접 선택/입력합니다(기본값: 빈 값)
-  const [date, setDate] = useState(sp.get("date") || "");
+  // 발주 페이지 최초 진입 시: 오늘 날짜로 기본 조회
+  const [date, setDate] = useState(sp.get("date") || todayYmd());
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
@@ -80,7 +80,7 @@ export default function Purchase() {
     confirmed_quantity: "", // 확정수량(판)
     tax_type: "TAXABLE", // 과세구분
     unit_price: "", // 단가
-    delivery_date: sp.get("date") || "",
+    delivery_date: sp.get("date") || todayYmd(),
     memo: "", // 비고
   });
   const [submitting, setSubmitting] = useState(false);

@@ -57,21 +57,6 @@
   font-weight: 700;
 }
 
-.filter-input, .filter-select {
-  width: 100%;
-  box-sizing: border-box;
-  display: block;
-  border: 1px solid var(--color-border-soft);
-  border-radius: var(--radius-sm);
-  padding: var(--sp-8) var(--sp-10);
-  font-size: var(--fs-14);
-  outline: none;
-}
-
-.filter-input:focus, .filter-select:focus {
-  border-color: var(--color-text);
-  box-shadow: var(--focus-ring);
-}
 
 .page-main {
   background: #fff;
@@ -105,46 +90,6 @@
   width: var(--w-140);
 }
 
-.btn {
-  border: none;
-  padding: var(--sp-9) var(--sp-12);
-  border-radius: var(--radius-sm);
-  background: var(--color-brand);
-  color: #fff;
-  font-weight: 800;
-  cursor: pointer;
-
-  /* unify button/label typography */
-  font-size: var(--fs-14);
-  font-family: inherit;
-  line-height: 1.2;
-
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--sp-8);
-}
-
-.btn:disabled {
-  opacity: 1;
-  cursor: not-allowed;
-}
-
-.btn.secondary {
-  background: var(--color-border-soft);
-  color: var(--color-text);
-}
-
-.btn.danger {
-  background: var(--color-danger);
-}
-
-.btn.small {
-  padding: var(--sp-6) var(--sp-10);
-  border-radius: clamp(8px, calc(9 * var(--ui)), 10px);
-  font-size: var(--fs-13);
-  font-weight: 900;
-}
 
 .head-actions {
   display: flex;
@@ -158,6 +103,13 @@
   display: inline-flex;
   gap: var(--sp-6);
   align-items: center;
+}
+
+/* Farm/Customer/ProductInfo: only action buttons centered (no other cell content affected) */
+.row-actions.actions-center {
+  display: flex;
+  justify-content: center;
+  width: 100%;
 }
 
 /* Modal */
@@ -423,6 +375,12 @@
 
 .data-table td.actions-cell .row-actions {
   justify-content: center;
+}
+
+/* Inventory: 작업 버튼이 줄바꿈되어 세로로 쌓이지 않도록 고정 */
+.accounting-page.inventory-page .data-table td.actions-cell .row-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
 }
 
 

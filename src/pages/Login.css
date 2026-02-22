@@ -1,76 +1,58 @@
-/* 전체 배경 */
+/* 로그인 페이지는 전역 토큰/버튼(.btn) 스타일을 기반으로
+   카드/간격만 로그인 전용으로 최소 커스텀합니다. */
+
 .login-wrapper {
   height: 100vh;
   display: flex;
   justify-content: center;
-  align-items: center;  
-  font-family: "Segoe UI", sans-serif;
+  align-items: center;
+  padding: var(--sp-24);
+  background: var(--color-bg);
 }
 
-/* 로그인 카드 */
 .login-card {
-  width: var(--w-360);
-  background: white;
+  width: min(92vw, var(--w-400));
+  background: #fff;
   padding: var(--sp-40);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-lg);
   box-shadow: 0 clamp(12px, calc(15 * var(--ui)), 20px)
-    clamp(28px, calc(40 * var(--ui)), 52px) rgba(0, 0, 0, 0.2);
+    clamp(28px, calc(40 * var(--ui)), 52px) rgba(2, 6, 23, 0.18);
   text-align: center;
 }
 
-/* 타이틀 */
 .login-title {
-  margin-bottom: var(--sp-30);
+  margin: 0 0 var(--sp-30);
   color: #1e293b;
+  letter-spacing: 0.01em;
 }
 
-/* 폼 */
 .login-form {
   display: flex;
   flex-direction: column;
   gap: var(--sp-15);
 }
 
-/* 인풋 */
 .login-input {
-  padding: var(--sp-12);
-  border-radius: var(--radius-xs);
-  border: 1px solid var(--color-border);
+  height: var(--ctl-40);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-soft);
+  padding: 0 var(--sp-14);
   font-size: var(--fs-14);
-  transition: all 0.2s ease;
 }
 
 .login-input:focus {
+  border-color: var(--color-text);
+  box-shadow: var(--focus-ring);
   outline: none;
-  border-color: #1e293b;
-  box-shadow: 0 0 0 clamp(2px, calc(2 * var(--ui)), 3px) rgba(30, 41, 59, 0.2);
 }
 
-/* 버튼 */
+/* 전역 .btn 을 사용하고, 로그인 버튼은 폭만 100%로 */
 .login-button {
-  padding: var(--sp-12);
-  border-radius: var(--radius-xs);
-  border: none;
-  background-color: var(--color-brand-dark);
-  color: white;
-  font-weight: 600;
-  cursor: pointer;
-  transition: 0.2s ease;
+  width: 100%;
 }
 
-.login-button:hover {
-  background-color: rgb(0, 169, 144);
-}
-
-/* 푸터 */
 .login-footer {
   margin-top: var(--sp-20);
   font-size: var(--fs-12);
-  color: #64748b;
-}
-
-@media (max-width: 420px) {
-  .login-card {
-    width: min(92vw, var(--w-360));
-  }
+  color: var(--color-muted);
 }

@@ -390,7 +390,7 @@ if (editing?.id != null) {
                     <td><span className={`badge ${r.haccp ? "ok" : "no"}`}>{r.haccp ? "유" : "무"}</span></td>
                     <td><span className={`badge ${r.organic ? "ok" : "no"}`}>{r.organic ? "유" : "무"}</span></td>
                     <td style={{ textAlign: "center" }}>
-                      <span className="row-actions">
+                      <span className="row-actions actions-center">
                         <button className="btn small secondary" onClick={() => openEdit(r)}>수정</button>
                         <button className="btn small danger" onClick={() => onDelete(r)}>삭제</button>
                       </span>

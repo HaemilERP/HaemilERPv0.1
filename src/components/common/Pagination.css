@@ -95,10 +95,17 @@
   align-items: center;
   justify-content: center;
   border: none;
-  background: var(--color-brand);
+  background: var(--color-brand-dark);
   color: #fff;
   cursor: pointer;
 }
+
+
+.page-jump-btn:hover {
+  background: var(--color-brand-dark);
+}
+
+
 /* =========================
    Page List (Center)
 ========================= */
@@ -116,6 +123,16 @@
   color: var(--color-text);
   cursor: pointer;
   box-shadow: none;
+}
+
+.page-btn:hover:not(:disabled):not(.active) {
+  background: var(--color-surface-muted);
+  border-color: var(--color-border);
+}
+
+.page-btn.nav:hover:not(:disabled):not(.active) {
+  background: #fff;
+  border-color: var(--color-border-soft);
 }
 /* nav 버튼 */
 .page-btn.nav {
@@ -148,7 +165,7 @@
   background: var(--color-border-soft);
   border-color: var(--color-border-soft);
   color: var(--color-text);
-  cursor: not-allowed;
+  cursor: pointer;
 }
 /* =========================
    Responsive

@@ -136,7 +136,7 @@ export default function OrderEggMatching() {
         if (ra !== rb) return ra - rb;
         return String(b?.receiving_date || "").localeCompare(String(a?.receiving_date || ""));
       });
-  }, [eligibleLots, requiredWeight]);
+  }, [eligibleLots, requiredWeight, order?.id]);
 
   const orderQtyTrays = useMemo(() => num(order?.confirmed_quantity ?? order?.quantity, 0), [order]);
   const allocatedTrays = useMemo(

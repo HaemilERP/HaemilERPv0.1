@@ -10,15 +10,22 @@
   --vh-unit: calc(100vh / var(--design-height));
   --ui: min(var(--vw-unit), var(--vh-unit));
 
+  /* brand */
   --color-brand: #00a990;
-  --color-brand-dark: #009781;
+  --color-brand-dark: #009781; /* active/primary */
+  --color-brand-soft: rgba(0, 151, 129, 0.12);
 
+  /* neutrals */
   --color-text: #0f172a;
   --color-muted: #64748b;
   --color-danger: #ef4444;
 
   --color-border: #cbd5e1;
   --color-border-soft: #e2e8f0;
+
+  --color-bg: #f4f6fb;
+  --color-surface: #ffffff;
+  --color-surface-muted: #f8fafc;
 
   /* radius (fluid) */
   --radius-lg: clamp(12px, calc(14 * var(--ui)), 18px);
@@ -55,8 +62,10 @@
   --w-140: clamp(120px, calc(140 * var(--ui)), 160px);
   --w-220: clamp(190px, calc(220 * var(--ui)), 260px);
   --w-260: clamp(200px, calc(260 * var(--ui)), 320px);
-  --w-360: clamp(320px, calc(360 * var(--ui)), 420px);
   --w-330: clamp(240px, calc(330 * var(--ui)), 380px);
+  --w-360: clamp(320px, calc(360 * var(--ui)), 420px);
+  --w-400: clamp(340px, calc(400 * var(--ui)), 480px);
+  --w-460: clamp(380px, calc(460 * var(--ui)), 560px);
 
   /* layout sizes */
   --nav-h: clamp(52px, calc(60 * var(--ui)), 64px);
@@ -66,10 +75,15 @@
     clamp(24px, calc(30 * var(--ui)), 40px) rgba(2, 6, 23, 0.08);
   --shadow-navbar: 0 clamp(8px, calc(10 * var(--ui)), 14px)
     clamp(18px, calc(25 * var(--ui)), 35px) rgba(0, 0, 0, 0.18);
+  --shadow-soft: 0 1px 0 rgba(2, 6, 23, 0.06);
+
   --focus-ring: 0 0 0 clamp(2px, calc(3 * var(--ui)), 4px)
     rgba(15, 23, 42, 0.14);
 }
 
+/* =====================
+   Base
+   ===================== */
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "Oxygen",
@@ -78,15 +92,25 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   color: var(--color-text);
+  background: var(--color-bg);
 }
 
+* {
+  box-sizing: border-box;
+}
 
+a {
+  color: inherit;
+}
 
 code {
   font-family: source-code-pro, Menlo, Monaco, Consolas, "Courier New", monospace;
 }
 
-/* 기본 폼 컨트롤 */
+/* =====================
+   Form controls (base)
+   - 기존 화면을 깨지 않도록 "기본"만 통일
+   ===================== */
 input,
 select,
 textarea {
@@ -94,6 +118,13 @@ textarea {
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border);
   font-size: var(--fs-14);
+  background: #fff;
+  color: var(--color-text);
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: #94a3b8;
 }
 
 input:focus,
@@ -102,4 +133,132 @@ textarea:focus {
   outline: none;
   border-color: var(--color-text);
   box-shadow: var(--focus-ring);
+}
+
+/* Accounting/Inventory/HR 에서 많이 쓰는 공통 필터 컨트롤 */
+.filter-input,
+.filter-select {
+  width: 100%;
+  box-sizing: border-box;
+  display: block;
+  border: 1px solid var(--color-border-soft);
+  border-radius: var(--radius-sm);
+  padding: var(--sp-8) var(--sp-10);
+  font-size: var(--fs-14);
+  outline: none;
+  background: #fff;
+}
+
+.filter-input:focus,
+.filter-select:focus {
+  border-color: var(--color-text);
+  box-shadow: var(--focus-ring);
+}
+
+/* =====================
+   Buttons (ERP Style)
+   - 대부분 화면이 .btn 클래스를 사용
+   - label/a 도 동일한 버튼 룩 적용
+   ===================== */
+.btn {
+  --btn-bg: var(--color-brand-dark);
+  --btn-bg-hover: var(--color-brand);
+  --btn-border: transparent;
+  --btn-color: #fff;
+
+  height: var(--ctl-40);
+  padding: 0 var(--sp-16);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--btn-border);
+  background: var(--btn-bg);
+  color: var(--btn-color);
+
+  font-size: var(--fs-14);
+  font-weight: 800;
+  font-family: inherit;
+  line-height: 1.2;
+
+  cursor: pointer;
+  user-select: none;
+  text-decoration: none;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-8);
+
+  /* 버튼 전역 hover 이펙트 제거(요구사항) */
+  transition: none;
+}
+
+.btn:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Secondary = white surface + border (ERP에서 가장 많이 쓰는 보조 버튼) */
+.btn.secondary {
+  --btn-bg: #fff;
+  --btn-bg-hover: var(--color-surface-muted);
+  --btn-border: var(--color-border-soft);
+  --btn-color: var(--color-text);
+}
+
+.btn.danger {
+  --btn-bg: var(--color-danger);
+  --btn-bg-hover: #dc2626;
+  --btn-border: transparent;
+  --btn-color: #fff;
+}
+
+.btn.small {
+  height: var(--ctl-36);
+  padding: 0 var(--sp-12);
+  border-radius: var(--radius-sm);
+  font-size: var(--fs-13);
+  font-weight: 900;
+}
+
+/* hover 컬러 변화가 필요 없는 버튼(예: 냅바 로그아웃) */
+.btn.no-hover {
+  --btn-bg-hover: var(--btn-bg);
+}
+
+/* label.btn 업로드 버튼 등 */
+label.btn {
+  cursor: pointer;
+}
+
+/* =====================
+   Small utilities
+   ===================== */
+.muted {
+  color: var(--color-muted);
+  font-size: var(--fs-13);
+}
+
+/* Scrollbar (선택: ERP스럽게 살짝 정돈) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgba(100, 116, 139, 0.25);
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.35);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
 }
