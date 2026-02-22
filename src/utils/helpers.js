@@ -181,3 +181,42 @@ export function farmsToText(farms, farmsById) {
   }
   return toLabel(farms);
 }
+
+export function getFirstValue(obj, keys = [], fallback = "") {
+  if (!obj || typeof obj !== "object") return fallback;
+  for (const key of keys) {
+    if (!key) continue;
+    const v = obj[key];
+    if (v !== null && v !== undefined && String(v).trim() !== "") {
+      return v;
+    }
+  }
+  return fallback;
+}
+
+export function getIdentifierLabel(obj, keys = [], fallbackKeys = ["id"]) {
+  const value = getFirstValue(obj, [...keys, ...fallbackKeys], "");
+  return asText(value);
+}
+
+export function normalizeFarmType(value) {
+  const v = asText(value).trim();
+  if (!v) return "";
+  if (v === "계약사육농장") return "동물복지농장";
+  return v;
+}
+
+export function toStringArray(value) {
+  if (Array.isArray(value)) {
+    return value
+      .map((v) => asText(v).trim())
+      .filter(Boolean);
+  }
+
+  const raw = asText(value).trim();
+  if (!raw) return [];
+  return raw
+    .split(/\r?\n|,/)
+    .map((v) => asText(v).trim())
+    .filter(Boolean);
+}

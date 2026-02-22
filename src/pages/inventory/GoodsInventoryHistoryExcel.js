@@ -107,8 +107,8 @@ export default function GoodsInventoryHistoryExcel() {
               <thead>
                 <tr>
                   <th>Excel 행</th>
-                  <th>ID</th>
-                  <th>메모</th>
+                  <th>제품 변경내역ID</th>
+                  <th>변경내역 메모</th>
                 </tr>
               </thead>
               <tbody>

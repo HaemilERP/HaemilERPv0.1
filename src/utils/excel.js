@@ -1,4 +1,5 @@
 import ExcelJS from "exceljs";
+import { normalizeFarmType } from "./helpers";
 
 export function todayYMD() {
   const d = new Date();
@@ -8,99 +9,16 @@ export function todayYMD() {
   return `${yyyy}${mm}${dd}`;
 }
 
-function hexToARGB(hex) {
-  // ExcelJS expects ARGB (AARRGGBB)
-  const h = String(hex || "").replace("#", "").trim();
-  if (h.length === 6) return `FF${h.toUpperCase()}`;
-  if (h.length === 8) return h.toUpperCase();
-  return "FF009781";
-}
-
-function applyThinBorder(cell) {
-  cell.border = {
-    top: { style: "thin" },
-    left: { style: "thin" },
-    bottom: { style: "thin" },
-    right: { style: "thin" },
-  };
-}
-
-function setColumnWidths(ws, colWidths) {
-  if (!Array.isArray(colWidths)) return;
-  colWidths.forEach((w, i) => {
-    if (!w) return;
-    ws.getColumn(i + 1).width = Number(w) || 12;
-  });
-}
-
-function addTitle(ws, title, colCount) {
-  const cols = Math.max(1, Number(colCount) || 1);
-  const lastCol = ws.getColumn(cols).letter;
-
-  // Title row
-  ws.mergeCells(`A1:${lastCol}1`);
-  const t = ws.getCell("A1");
-  t.value = title;
-  t.font = { bold: true, size: 16 };
-  t.alignment = { vertical: "middle", horizontal: "center" };
-  ws.getRow(1).height = 28;
-
-  // Spacer row
-  ws.mergeCells(`A2:${lastCol}2`);
-  ws.getRow(2).height = 10;
-}
-
-function styleHeaderRow(ws, headerRowNumber, colCount, headerHex) {
-  const fillArgb = hexToARGB(headerHex);
-  const r = ws.getRow(headerRowNumber);
-  r.height = 20;
-
-  for (let c = 1; c <= colCount; c += 1) {
-    const cell = r.getCell(c);
-    cell.font = { bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: fillArgb } };
-    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    applyThinBorder(cell);
-  }
-}
-
-function styleBody(ws, fromRow, toRow, colCount) {
-  for (let r = fromRow; r <= toRow; r += 1) {
-    const row = ws.getRow(r);
-    for (let c = 1; c <= colCount; c += 1) {
-      const cell = row.getCell(c);
-      cell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
-      applyThinBorder(cell);
-    }
-  }
-}
-
-function addDropdownValidation(ws, colIdx, fromRow, toRow, options) {
-  if (!Array.isArray(options) || options.length === 0) return;
-
-  // Excel list validation formula: "A,B,C"
-  // Escape double-quotes by doubling them (rare for our options).
-  const list = options.map((x) => String(x).replace(/"/g, '""')).join(",");
-  const formula = `"${list}"`;
-
-  for (let r = fromRow; r <= toRow; r += 1) {
-    const cell = ws.getRow(r).getCell(colIdx);
-    cell.dataValidation = {
-      type: "list",
-      allowBlank: true,
-      showErrorMessage: true,
-      errorTitle: "값 선택",
-      error: "목록에서 값을 선택하세요.",
-      formulae: [formula],
-    };
-  }
-}
-
 function normalizeHeader(v) {
   return String(v ?? "")
     .trim()
+    .toLowerCase()
     .replace(/\s+/g, "")
-    .toLowerCase();
+    .replace(/_/g, "");
+}
+
+function isEmptyRow(row) {
+  return !(row || []).some((v) => String(v ?? "").trim() !== "");
 }
 
 function idxOfHeader(headers, aliases) {
@@ -108,42 +26,66 @@ function idxOfHeader(headers, aliases) {
   return (headers || []).findIndex((h) => set.has(normalizeHeader(h)));
 }
 
-function isEmptyRow(row) {
-  return (row || []).every((c) => String(c ?? "").trim() === "");
+function findHeaderRow(aoa, aliases) {
+  const aliasSet = new Set((aliases || []).map(normalizeHeader));
+  let bestIdx = 0;
+  let bestScore = -1;
+  const limit = Math.min(8, aoa.length);
+  for (let i = 0; i < limit; i += 1) {
+    const row = aoa[i] || [];
+    const score = row.reduce((sum, c) => {
+      const ok = aliasSet.has(normalizeHeader(c));
+      return sum + (ok ? 1 : 0);
+    }, 0);
+    if (score > bestScore) {
+      bestScore = score;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+function parseString(v) {
+  return String(v ?? "").trim();
+}
+
+function normalizeEggGrade(v) {
+  const s = parseString(v);
+  if (!s || s === "무") return "무";
+  if (s === "1") return "1";
+  if (s === "1+") return "1+";
+  if (s === "기타") return "기타";
+  return "기타";
 }
 
 export function parseBool(v) {
-  const s = String(v ?? "").trim().toLowerCase();
+  const s = parseString(v).toLowerCase();
   if (!s) return false;
-  if (["true", "1", "y", "yes", "유", "예", "o"].includes(s)) return true;
-  if (["false", "0", "n", "no", "무", "아니오", "x"].includes(s)) return false;
+  if (["true", "1", "y", "yes", "o", "유", "예"].includes(s)) return true;
+  if (["false", "0", "n", "no", "x", "무", "아니오"].includes(s)) return false;
   return true;
 }
 
-export function parseNumberOrNull(v) {
-  const s = String(v ?? "").trim();
+function parseNumberOrNull(v) {
+  const s = parseString(v);
   if (!s) return null;
   const n = Number(s);
   return Number.isFinite(n) ? n : null;
 }
 
-export function parseNumberRequired(v) {
-  const s = String(v ?? "").trim();
+function parseNumberRequired(v) {
+  const s = parseString(v);
   if (!s) return { ok: false, value: null };
   const n = Number(s);
   return { ok: Number.isFinite(n), value: Number.isFinite(n) ? n : null };
 }
 
-// Normalize various date inputs to YYYY-MM-DD (best-effort)
-export function normalizeYMD(v) {
-  const s = String(v ?? "").trim();
+function normalizeYMD(v) {
+  const s = parseString(v);
   if (!s) return "";
-
-  // Already YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
 
-  // YYYY.MM.DD or YYYY/MM/DD
-  const m1 = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})/);
+  const m1 = s.match(/^(\d{4})[./-](\d{1,2})[./-](\d{1,2})$/);
   if (m1) {
     const yyyy = m1[1];
     const mm = String(m1[2]).padStart(2, "0");
@@ -151,7 +93,6 @@ export function normalizeYMD(v) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Excel serial number (very common) - treat as days from 1899-12-30
   const n = Number(s);
   if (Number.isFinite(n) && n > 20000 && n < 80000) {
     const epoch = new Date(Date.UTC(1899, 11, 30));
@@ -162,7 +103,6 @@ export function normalizeYMD(v) {
     return `${yyyy}-${mm}-${dd}`;
   }
 
-  // Fallback: try Date parsing
   const d2 = new Date(s);
   if (!Number.isNaN(d2.getTime())) {
     const yyyy = d2.getFullYear();
@@ -170,38 +110,62 @@ export function normalizeYMD(v) {
     const dd = String(d2.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   }
-
   return s;
 }
 
-export function parseDateRequired(v) {
-  const y = normalizeYMD(v);
-  if (!y) return { ok: false, value: "" };
-  // allow only YYYY-MM-DD
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(y)) return { ok: false, value: y };
-  return { ok: true, value: y };
+function parseDateRequired(v) {
+  const ymd = normalizeYMD(v);
+  if (!ymd) return { ok: false, value: "" };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return { ok: false, value: ymd };
+  return { ok: true, value: ymd };
 }
 
-export function parseIdList(v) {
-  const s = String(v ?? "").trim();
-  if (!s) return [];
-  return s
-    .split(/[\s,]+/)
+function parseStringList(v) {
+  return parseString(v)
+    .split(/\r?\n|,/)
     .map((x) => x.trim())
-    .filter(Boolean)
-    .map((x) => Number(x))
-    .filter((n) => Number.isFinite(n) && n > 0);
+    .filter(Boolean);
 }
 
-// -----------------------
-// Download helpers
-// -----------------------
+function parseNumberList(v) {
+  return parseString(v)
+    .split(/[\s,]+/)
+    .map((x) => Number(x))
+    .filter((n) => Number.isFinite(n));
+}
 
-async function downloadWorkbookBuffer(filename, buffer) {
-  const blob = new Blob([buffer], {
+function readCellValue(cell) {
+  const value = cell?.value;
+  if (value == null) return "";
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  if (typeof value === "object") {
+    if (Object.prototype.hasOwnProperty.call(value, "result")) return String(value.result ?? "");
+    if (Object.prototype.hasOwnProperty.call(value, "text")) return String(value.text ?? "");
+    if (Array.isArray(value.richText)) return value.richText.map((v) => v?.text || "").join("");
+  }
+  return String(value);
+}
+
+async function downloadWorkbook(filename, headers, rows, title = "") {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("sheet1");
+
+  if (title) ws.addRow([title]);
+  if (title) ws.addRow([]);
+  ws.addRow(headers || []);
+  (rows || []).forEach((row) => ws.addRow(Array.isArray(row) ? row : []));
+
+  ws.columns = (headers || []).map(() => ({ width: 22 }));
+
+  const headerRowNumber = title ? 3 : 1;
+  const headerRow = ws.getRow(headerRowNumber);
+  headerRow.font = { bold: true, color: { argb: "FFFFFFFF" } };
+  headerRow.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF009781" } };
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   });
-
   const url = window.URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -212,558 +176,479 @@ async function downloadWorkbookBuffer(filename, buffer) {
   window.URL.revokeObjectURL(url);
 }
 
-export async function downloadWorkbook({ filename, sheets }) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  (sheets || []).forEach((s) => {
-    const ws = wb.addWorksheet(s.name || "Sheet1");
-
-    const aoa = Array.isArray(s.aoa) ? s.aoa : [[]];
-    aoa.forEach((row, i) => ws.addRow(row));
-
-    setColumnWidths(ws, s.colWidths);
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(filename, buf);
-}
-
-export async function downloadAOAXlsx({ filename, sheetName = "Sheet1", aoa, colWidths }) {
-  return downloadWorkbook({
-    filename,
-    sheets: [{ name: sheetName, aoa, colWidths }],
-  });
-}
-
-
-function cellValueToString(cell) {
-  const v = cell?.value;
-
-  if (v === null || v === undefined) return "";
-
-  if (typeof v === "object") {
-    if (v instanceof Date) return v.toISOString().slice(0, 10);
-
-    if (Object.prototype.hasOwnProperty.call(v, "result")) {
-      const res = v.result;
-      return res === null || res === undefined ? "" : String(res);
-    }
-
-    if (Object.prototype.hasOwnProperty.call(v, "text")) {
-      return v.text === null || v.text === undefined ? "" : String(v.text);
-    }
-
-    if (Array.isArray(v.richText)) {
-      return v.richText.map((t) => t?.text || "").join("");
-    }
-
-    try {
-      return String(v);
-    } catch {
-      return "";
-    }
-  }
-
-  return String(v);
-}
-
 export async function readFirstSheetAOA(file) {
-  const buf = await file.arrayBuffer();
   const wb = new ExcelJS.Workbook();
-  await wb.xlsx.load(buf);
-
+  await wb.xlsx.load(await file.arrayBuffer());
   const ws = wb.worksheets?.[0];
   if (!ws) return [];
 
-  // Find max columns in first ~200 rows (avoid huge loops)
-  let maxCol = 0;
-  const maxScanRows = Math.min(ws.rowCount || 0, 200);
-  for (let r = 1; r <= maxScanRows; r += 1) {
+  let maxCol = 1;
+  const scanRows = Math.min(ws.rowCount || 1, 250);
+  for (let r = 1; r <= scanRows; r += 1) {
     const row = ws.getRow(r);
-    maxCol = Math.max(maxCol, row.actualCellCount || row.cellCount || 0);
+    maxCol = Math.max(maxCol, row.actualCellCount || row.cellCount || 1);
   }
-  maxCol = Math.max(maxCol, 1);
 
   const aoa = [];
-  for (let r = 1; r <= ws.rowCount; r += 1) {
+  for (let r = 1; r <= (ws.rowCount || 0); r += 1) {
     const row = ws.getRow(r);
     const arr = [];
     for (let c = 1; c <= maxCol; c += 1) {
-      const cell = row.getCell(c);
-      // Prefer text for dates/formulas etc.
-      arr.push(cellValueToString(cell));
+      arr.push(readCellValue(row.getCell(c)));
     }
     aoa.push(arr);
   }
-
-  // Trim trailing empty rows
   while (aoa.length && isEmptyRow(aoa[aoa.length - 1])) aoa.pop();
-
   return aoa;
 }
 
-// -----------------------
-// Templates (Korean headers; ID & HACCP in uppercase English)
-// -----------------------
+const CUSTOMER_HEADERS = [
+  "고객사코드",
+  "고객사명",
+  "납품처",
+  "사용농장",
+  "최대산란일수",
+  "유통기한",
+];
+const FARM_HEADERS = [
+  "농장식별자",
+  "농장명",
+  "산란번호",
+  "농장유형",
+  "무항생제",
+  "HACCP",
+  "유기농",
+];
+const PRODUCT_HEADERS = [
+  "제품식별자",
+  "제품명",
+  "고객사코드",
+  "계란수",
+  "사육번호목록",
+  "농장유형",
+  "계란등급",
+  "중량",
+  "계란유형",
+  "최대산란일수",
+  "유통기한",
+  "무항생제",
+  "HACCP",
+  "유기농",
+];
+const CUSTOMER_HEADER_ALIASES = [
+  ...CUSTOMER_HEADERS,
+  "customer_code",
+  "customer_name",
+  "client",
+  "available_farms",
+  "max_laying_days",
+  "expiration_date",
+];
+const FARM_HEADER_ALIASES = [
+  ...FARM_HEADERS,
+  "farm_id",
+  "farm_name",
+  "shell_number",
+  "farm_type",
+  "antibiotic_free",
+  "haccp",
+  "organic",
+];
+const PRODUCT_HEADER_ALIASES = [
+  ...PRODUCT_HEADERS,
+  "product_no",
+  "product_name",
+  "customer_code",
+  "egg_count",
+  "breeding_number",
+  "farm_type",
+  "egg_grade",
+  "egg_weight",
+  "process_type",
+  "max_laying_days",
+  "expiration_date",
+  "antibiotic_free",
+  "haccp",
+  "organic",
+];
+const EGGLOT_HEADERS = [
+  "계란재고식별자",
+  "농장",
+  "농장유형",
+  "산란번호",
+  "입고일",
+  "산란일",
+  "중량",
+  "계란등급",
+  "위치",
+  "주령",
+  "수량",
+  "메모",
+];
+const EGGLOT_HEADER_ALIASES = [
+  ...EGGLOT_HEADERS,
+  "Egglot_no",
+  "egg_lot_id",
+  "farm_id",
+  "receiving_date",
+  "shell_number",
+  "breeding_number",
+  "farm_type",
+  "age_weeks",
+  "egg_weight",
+  "laying_date",
+  "egg_grade",
+  "location",
+  "quantity",
+  "memo",
+];
 
-const HEADER_COLOR = "#009781";
-const VALIDATION_ROWS_FROM = 4;   // after title(1), spacer(2), header(3)
-const VALIDATION_ROWS_TO = 500;   // enough for typical bulk input
+const PRODUCTLOT_HEADERS = [
+  "제품재고식별자",
+  "제품",
+  "계란식별자",
+  "수량",
+  "위치",
+  "공정일",
+  "라인",
+  "메모",
+];
+const PRODUCTLOT_HEADER_ALIASES = [
+  ...PRODUCTLOT_HEADERS,
+  "제품로트식별자",
+  "ProductLot_no",
+  "product_lot_id",
+  "product_id",
+  "product_no",
+  "egg_lot_id",
+  "Egglot_no",
+  "quantity",
+  "location",
+  "process_day",
+  "machine_line",
+  "memo",
+];
+const HISTORY_MEMO_HEADER_ALIASES = [
+  "id",
+  "ID",
+  "계란 변경내역ID",
+  "제품 변경내역ID",
+  "변경내역ID",
+  "memo",
+  "메모",
+  "변경내역 메모",
+];
 
-function buildTemplateSheet(wb, { title, headers, example, colWidths, validations }) {
-  const ws = wb.addWorksheet("입력");
-
-  const colCount = headers.length;
-
-  addTitle(ws, title, colCount);
-
-  // Header row at row 3
-  ws.addRow(headers);
-  // Example row at row 4
-  if (Array.isArray(example)) ws.addRow(example);
-
-  setColumnWidths(ws, colWidths);
-
-  styleHeaderRow(ws, 3, colCount, HEADER_COLOR);
-  styleBody(ws, 4, Math.max(4, ws.rowCount), colCount);
-
-  // Freeze header
-  ws.views = [{ state: "frozen", ySplit: 3 }];
-
-  // Validations: [{ colName, options }]
-  (validations || []).forEach((v) => {
-    const idx = headers.findIndex((h) => h === v.colName);
-    if (idx >= 0) {
-      addDropdownValidation(ws, idx + 1, VALIDATION_ROWS_FROM, VALIDATION_ROWS_TO, v.options);
-    }
-  });
-
-  // Add guide sheet (simple)
-  const guide = wb.addWorksheet("설명");
-  guide.addRow(["사용방법"]);
-  guide.addRow(["- 4행부터 데이터를 입력하세요. (1행: 제목 / 3행: 헤더)"]);
-  guide.addRow(["- ID가 있으면 해당 ID를 수정(PATCH), 없으면 신규 생성(POST)합니다."]);
-  guide.addRow(["- 선택지가 있는 항목은 드롭다운으로 선택하세요."]);
-  guide.getColumn(1).width = 120;
-
-  return wb;
-}
-
-
-// -----------------------
-// Styled list exports (match each template format)
-// -----------------------
-
-function buildDataSheet(wb, { sheetName = "목록", title, headers, rows, colWidths, validations }) {
-  const ws = wb.addWorksheet(sheetName);
-
-  const colCount = headers.length;
-  addTitle(ws, title, colCount);
-
-  ws.addRow(headers);
-
-  (rows || []).forEach((r) => ws.addRow(Array.isArray(r) ? r : []));
-
-  setColumnWidths(ws, colWidths);
-
-  // Header row at row 3 (after title+spacer)
-  styleHeaderRow(ws, 3, colCount, HEADER_COLOR);
-
-  // Body from row 4 to end
-  const lastRow = Math.max(4, ws.rowCount || 4);
-  styleBody(ws, 4, lastRow, colCount);
-
-  ws.views = [{ state: "frozen", ySplit: 3 }];
-
-  // Optional dropdown validations (same as template)
-  (validations || []).forEach((v) => {
-    const idx = headers.findIndex((h) => h === v.colName);
-    if (idx >= 0) {
-      addDropdownValidation(ws, idx + 1, 4, Math.max(4, Math.min(lastRow + 50, VALIDATION_ROWS_TO)), v.options);
-    }
-  });
-
-  return ws;
-}
-
-export async function downloadCustomerListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = ["ID", "고객사명", "농장명", "납고가능 일수", "유통기한"];
-  buildDataSheet(wb, {
-    sheetName: "고객사",
-    title: "고객사 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 24, 34, 16, 14],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_고객사목록_${todayYMD()}.xlsx`, buf);
-}
-
-export async function downloadFarmListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = ["ID", "농장명", "난각번호", "농장유형", "무항생제", "HACCP", "유기농"];
-  buildDataSheet(wb, {
-    sheetName: "농장",
-    title: "농장 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 22, 14, 14, 12, 10, 10],
-    validations: [
-      { colName: "농장유형", options: ["일반농장", "동물복지농장"] },
-      { colName: "무항생제", options: ["유", "무"] },
-      { colName: "HACCP", options: ["유", "무"] },
-      { colName: "유기농", options: ["유", "무"] },
-    ],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_농장목록_${todayYMD()}.xlsx`, buf);
-}
-
-export async function downloadProductListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = [
-    "ID",
-    "제품명",
-    "고객사ID",
-    "계란수",
-    "사육번호",
-    "농장유형",
-    "계란등급",
-    "난중",
-    "가공여부",
-    "납고가능 일수",
-    "유통기한",
-    "무항생제",
-    "HACCP",
-    "유기농",
-  ];
-
-  buildDataSheet(wb, {
-    sheetName: "제품",
-    title: "제품 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 22, 12, 10, 12, 14, 12, 12, 12, 14, 12, 12, 10, 10],
-    validations: [
-      { colName: "농장유형", options: ["일반농장", "동물복지농장"] },
-      { colName: "계란등급", options: ["A", "B"] },
-      { colName: "난중", options: ["왕란", "특란", "대란", "중란", "소란"] },
-      { colName: "가공여부", options: ["생란", "구운란"] },
-      { colName: "무항생제", options: ["유", "무"] },
-      { colName: "HACCP", options: ["유", "무"] },
-      { colName: "유기농", options: ["유", "무"] },
-    ],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품목록_${todayYMD()}.xlsx`, buf);
-}
-
-// -----------------------
-// Inventory list exports
-// -----------------------
-
-export async function downloadEggLotListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = [
-    "계란재고ID",
-    "농장ID",
-    "입고일",
-    "난각번호",
-    "사육번호",
-    "농장유형",
-    "주령",
-    "가공",
-    "난중",
-    "산란일",
-    "등급",
-    "위치",
-    "수량",
-    "메모",
-    "활성여부",
-  ];
-
-  buildDataSheet(wb, {
-    sheetName: "계란재고",
-    title: "계란재고 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 12, 14, 12, 12, 14, 12, 12, 10, 14, 10, 18, 10, 26, 10],
-    validations: [
-      { colName: "농장유형", options: ["일반농장", "계약사육농장"] },
-      { colName: "가공", options: ["구운란", "생란", "반숙", "기타"] },
-      { colName: "난중", options: ["왕란", "특란", "대란", "중란", "소란"] },
-      { colName: "활성여부", options: ["유", "무"] },
-    ],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_계란재고목록_${todayYMD()}.xlsx`, buf);
-}
-
-export async function downloadProductLotListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = ["제품재고ID", "제품ID", "계란재고ID", "수량", "위치", "메모", "활성여부"];
-
-  buildDataSheet(wb, {
-    sheetName: "제품재고",
-    title: "제품재고 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 12, 12, 10, 18, 26, 10],
-    validations: [{ colName: "활성여부", options: ["유", "무"] }],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품재고목록_${todayYMD()}.xlsx`, buf);
-}
-
-export async function downloadEggLotHistoryListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = [
-    "계란 변경내역ID",
-    "계란재고",
-    "유형",
-    "변경전",
-    "변경후",
-    "변경수량",
-    "변경자",
-    "변경일시",
-    "메모",
-  ];
-
-  buildDataSheet(wb, {
-    sheetName: "계란변경내역",
-    title: "계란재고 변경내역 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 12, 12, 10, 10, 10, 16, 20, 40],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_계란변경내역_${todayYMD()}.xlsx`, buf);
-}
-
-export async function downloadProductLotHistoryListXlsx(rows) {
-  const wb = new ExcelJS.Workbook();
-  wb.creator = "Haemil ERP";
-  wb.created = new Date();
-
-  const headers = [
-    "제품 변경내역ID",
-    "제품재고",
-    "유형",
-    "변경전",
-    "변경후",
-    "변경수량",
-    "변경자",
-    "변경일시",
-    "메모",
-  ];
-
-  buildDataSheet(wb, {
-    sheetName: "제품변경내역",
-    title: "제품재고 변경내역 엑셀 출력",
-    headers,
-    rows,
-    colWidths: [10, 12, 12, 10, 10, 10, 16, 20, 40],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품변경내역_${todayYMD()}.xlsx`, buf);
-}
 export async function downloadCustomerTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "고객사정보 입력 서식",
-    headers: ["ID", "고객사명", "농장명", "납고가능 일수", "유통기한"],
-    colWidths: [10, 24, 34, 16, 14],
-    validations: [],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_고객사_입력서식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbook(
+    `HaemilERP_customer_template_${todayYMD()}.xlsx`,
+    CUSTOMER_HEADERS,
+    [
+      ["CUST001", "고객사A", "납품처A,납품처B", "FARM01,FARM02", 7, 45],
+    ],
+    "Customer Template"
+  );
 }
 
 export async function downloadFarmTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "농장정보 입력 서식",
-    headers: ["ID", "농장명", "난각번호", "농장유형", "무항생제", "HACCP", "유기농"],
-    colWidths: [10, 22, 14, 14, 12, 10, 10],
-    validations: [
-      { colName: "농장유형", options: ["일반농장", "동물복지농장"] },
-      { colName: "무항생제", options: ["유", "무"] },
-      { colName: "HACCP", options: ["유", "무"] },
-      { colName: "유기농", options: ["유", "무"] },
-    ],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_농장_입력서식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbook(
+    `HaemilERP_farm_template_${todayYMD()}.xlsx`,
+    FARM_HEADERS,
+    [["FARM01", "농장A", "12", "일반농장", "유", "유", "무"]],
+    "Farm Template"
+  );
 }
 
 export async function downloadProductTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "제품정보 입력 서식",
-    headers: ["ID", "제품명", "고객사ID", "계란수", "사육번호", "농장유형", "계란등급", "난중", "가공여부", "납고가능 일수", "유통기한", "무항생제", "HACCP", "유기농"],
-    colWidths: [10, 22, 12, 10, 12, 14, 12, 12, 12, 14, 12, 12, 10, 10],
-    validations: [
-      { colName: "농장유형", options: ["일반농장", "동물복지농장"] },
-      { colName: "계란등급", options: ["A", "B"] },
-      { colName: "난중", options: ["왕란", "특란", "대란", "중란", "소란"] },
-      { colName: "가공여부", options: ["생란", "구운란"] },
-      { colName: "무항생제", options: ["유", "무"] },
-      { colName: "HACCP", options: ["유", "무"] },
-      { colName: "유기농", options: ["유", "무"] },
+  await downloadWorkbook(
+    `HaemilERP_product_template_${todayYMD()}.xlsx`,
+    PRODUCT_HEADERS,
+    [
+      [
+        "PRD001",
+        "제품A",
+        "CUST001",
+        10,
+        "1,2",
+        "일반농장",
+        "무",
+        "대란",
+        "생란",
+        7,
+        30,
+        "유",
+        "유",
+        "무",
+      ],
     ],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품_입력서식_${todayYMD()}.xlsx`, buf);
+    "Product Template"
+  );
 }
 
-// -----------------------
-// Inventory templates
-// -----------------------
-
 export async function downloadEggLotTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "계란재고(EggLot) 입력 양식",
-    headers: [
-      "계란재고ID",
-      "농장ID",
-      "입고일",
-      "난각번호",
-      "사육번호",
-      "농장유형",
-      "주령",
-      "가공",
-      "난중",
-      "산란일",
-      "등급",
-      "위치",
-      "수량",
-      "메모",
-      "활성여부",
+  await downloadWorkbook(
+    `HaemilERP_egglot_template_${todayYMD()}.xlsx`,
+    EGGLOT_HEADERS,
+    [
+      [
+        "",
+        "FARM01",
+        "일반농장",
+        "12",
+        "2026-02-22",
+        "2026-02-21",
+        "대란",
+        "무",
+        "창고A",
+        40,
+        300,
+        "",
+      ],
     ],
-    colWidths: [10, 12, 14, 12, 12, 14, 12, 12, 10, 14, 10, 18, 10, 26, 10],
-    validations: [
-      { colName: "농장유형", options: ["일반농장", "계약사육농장"] },
-      { colName: "가공", options: ["구운란", "생란", "반숙", "기타"] },
-      { colName: "난중", options: ["왕란", "특란", "대란", "중란", "소란"] },
-      { colName: "활성여부", options: ["유", "무"] },
-    ],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_계란재고_입력양식_${todayYMD()}.xlsx`, buf);
+    "EggLot Template"
+  );
 }
 
 export async function downloadProductLotTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "제품재고(ProductLot) 입력 양식",
-    headers: ["제품재고ID", "제품ID", "계란재고ID", "수량", "위치", "메모", "활성여부"],
-    colWidths: [10, 12, 12, 10, 18, 26, 10],
-    validations: [{ colName: "활성여부", options: ["유", "무"] }],
-  });
-
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품재고_입력양식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbook(
+    `HaemilERP_productlot_template_${todayYMD()}.xlsx`,
+    PRODUCTLOT_HEADERS,
+    [["", "PRD001", "ELOT001", 120, "가공실A", "2026-02-22", "LINE-1", ""]],
+    "ProductLot Template"
+  );
 }
 
-// 변경내역은 입력(업로드) 없이, 메모 업데이트용 템플릿만 제공(선택)
 export async function downloadEggLotHistoryMemoTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "계란재고 변경내역 메모 입력 서식",
-    headers: ["ID", "메모"],
-    colWidths: [10, 40],
-    validations: [],
-  });
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_계란재고변경내역_메모서식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbook(
+    `HaemilERP_egglot_history_memo_template_${todayYMD()}.xlsx`,
+    ["계란 변경내역ID", "변경내역 메모"],
+    [[1, "메모 수정"]],
+    "EggLotHistory Memo Template"
+  );
 }
 
 export async function downloadProductLotHistoryMemoTemplate() {
-  const wb = new ExcelJS.Workbook();
-  buildTemplateSheet(wb, {
-    title: "제품재고 변경내역 메모 입력 서식",
-    headers: ["ID", "메모"],
-    colWidths: [10, 40],
-    validations: [],
-  });
-  const buf = await wb.xlsx.writeBuffer();
-  await downloadWorkbookBuffer(`HaemilERP_제품재고변경내역_메모서식_${todayYMD()}.xlsx`, buf);
+  await downloadWorkbook(
+    `HaemilERP_productlot_history_memo_template_${todayYMD()}.xlsx`,
+    ["제품 변경내역ID", "변경내역 메모"],
+    [[1, "메모 수정"]],
+    "ProductLotHistory Memo Template"
+  );
 }
 
-// -----------------------
-// Parsers (xlsx -> rows)
-// -----------------------
+export async function downloadCustomerListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_customer_list_${todayYMD()}.xlsx`,
+    CUSTOMER_HEADERS,
+    rows,
+    "Customer List"
+  );
+}
+
+export async function downloadFarmListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_farm_list_${todayYMD()}.xlsx`,
+    FARM_HEADERS,
+    rows,
+    "Farm List"
+  );
+}
+
+export async function downloadProductListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_product_list_${todayYMD()}.xlsx`,
+    PRODUCT_HEADERS,
+    rows,
+    "Product List"
+  );
+}
+
+export async function downloadEggLotListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_egglot_list_${todayYMD()}.xlsx`,
+    EGGLOT_HEADERS,
+    rows,
+    "EggLot List"
+  );
+}
+
+export async function downloadProductLotListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_productlot_list_${todayYMD()}.xlsx`,
+    PRODUCTLOT_HEADERS,
+    rows,
+    "ProductLot List"
+  );
+}
+
+export async function downloadEggLotHistoryListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_egglot_history_${todayYMD()}.xlsx`,
+    ["계란 변경내역ID", "계란재고", "유형", "변경전", "변경후", "변화량", "변경자", "변경일시", "변경내역 메모"],
+    rows,
+    "EggLot History"
+  );
+}
+
+export async function downloadProductLotHistoryListXlsx(rows) {
+  await downloadWorkbook(
+    `HaemilERP_productlot_history_${todayYMD()}.xlsx`,
+    ["제품 변경내역ID", "제품재고", "유형", "변경전", "변경후", "변화량", "변경자", "변경일시", "변경내역 메모"],
+    rows,
+    "ProductLot History"
+  );
+}
+
+const ORDER_COMMON_FORM_HEADERS = [
+  "거래처",
+  "센터구분",
+  "상품이름",
+  "발주수량",
+  "확정수량",
+  "괴세구분",
+  "단가",
+  "공급가",
+  "부가세",
+  "출고일자",
+  "비고",
+];
+
+const ORDER_COMMON_FORM_WIDTHS = [
+  24.25, 24.25, 32.25, 24, 24, 18.63, 14.5, 13.5, 15, 16.88, 21.38,
+];
+
+function applyThinCellBorder(cell) {
+  cell.border = {
+    top: { style: "thin", color: { argb: "FF000000" } },
+    left: { style: "thin", color: { argb: "FF000000" } },
+    bottom: { style: "thin", color: { argb: "FF000000" } },
+    right: { style: "thin", color: { argb: "FF000000" } },
+  };
+}
+
+function toOrderFormDateCell(v) {
+  const raw = parseString(v);
+  if (!raw) return "";
+
+  const m = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) {
+    const yyyy = Number(m[1]);
+    const mm = Number(m[2]);
+    const dd = Number(m[3]);
+    if (Number.isFinite(yyyy) && Number.isFinite(mm) && Number.isFinite(dd)) {
+      return new Date(yyyy, mm - 1, dd);
+    }
+  }
+
+  const d = new Date(raw);
+  if (Number.isNaN(d.getTime())) return raw;
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+export async function downloadOrderCommonFormXlsx(rows = []) {
+  const wb = new ExcelJS.Workbook();
+  const ws = wb.addWorksheet("상품목록");
+
+  ws.addRow([]);
+  ws.addRow(ORDER_COMMON_FORM_HEADERS);
+
+  (rows || []).forEach((r) => {
+    const row = Array.isArray(r) ? [...r] : [];
+    row[9] = toOrderFormDateCell(row[9]);
+    ws.addRow(row);
+  });
+
+  ws.columns = ORDER_COMMON_FORM_WIDTHS.map((width) => ({ width }));
+  ws.getRow(1).height = 18;
+  ws.getRow(2).height = 32;
+
+  const yellowCols = new Set([1, 2, 6, 7, 11]);
+  for (let r = 2; r <= ws.rowCount; r += 1) {
+    if (r >= 3) ws.getRow(r).height = 17.25;
+
+    for (let c = 1; c <= ORDER_COMMON_FORM_HEADERS.length; c += 1) {
+      const cell = ws.getRow(r).getCell(c);
+      applyThinCellBorder(cell);
+      cell.alignment = { horizontal: "center", vertical: "middle" };
+
+      if (r === 2) {
+        cell.font = {
+          name: "Malgun Gothic",
+          size: c === 4 || c === 5 ? 12 : 11,
+          bold: false,
+        };
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: yellowCols.has(c) ? "FFFFFF00" : "FFD0CECE" },
+        };
+      } else {
+        cell.font = { name: "Malgun Gothic", size: 11, bold: false };
+      }
+    }
+  }
+
+  for (let r = 3; r <= ws.rowCount; r += 1) {
+    ws.getRow(r).getCell(7).numFmt = "#,##0";
+    ws.getRow(r).getCell(8).numFmt = "#,##0";
+    ws.getRow(r).getCell(9).numFmt = "#,##0";
+    ws.getRow(r).getCell(10).numFmt = "yyyy-mm-dd";
+  }
+
+  const buf = await wb.xlsx.writeBuffer();
+  const blob = new Blob([buf], {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  const url = window.URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `공통_발주양식_${todayYMD()}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  window.URL.revokeObjectURL(url);
+}
 
 export function parseCustomerAOA(aoa) {
   const out = { rows: [], errors: [] };
-  if (!Array.isArray(aoa) || aoa.length === 0) return out;
+  if (!Array.isArray(aoa) || !aoa.length) return out;
 
-  // Expect header row at row 3, but be tolerant:
-  const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
+  const headerRowIdx = findHeaderRow(aoa, CUSTOMER_HEADER_ALIASES);
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID", "고객사id"]);
-  const nameIdx = idxOfHeader(headers, ["customer_name", "고객사명"]);
-  const farmsIdx = idxOfHeader(headers, ["available_farms", "농장명", "농장id", "농장", "farm_ids"]);
-  const maxIdx = idxOfHeader(headers, ["max_laying_days", "납고가능 일수", "납고가능일수", "납고가능일"]);
-  const expIdx = idxOfHeader(headers, ["expiration_date", "유통기한"]);
+  const codeIdx = idxOfHeader(headers, ["고객사코드", "customer_code", "customerid", "customer_id"]);
+  const nameIdx = idxOfHeader(headers, ["고객사명", "customer_name", "customername"]);
+  const clientIdx = idxOfHeader(headers, ["납품처", "client", "clients"]);
+  const farmsIdx = idxOfHeader(headers, ["사용농장", "available_farms", "availablefarms", "farm_ids", "farmids"]);
+  const maxIdx = idxOfHeader(headers, ["최대산란일수", "max_laying_days", "maxlayingdays"]);
+  const expIdx = idxOfHeader(headers, ["유통기한", "expiration_date", "expirationdate"]);
 
   for (let r = headerRowIdx + 1; r < aoa.length; r += 1) {
     const row = aoa[r] || [];
     if (isEmptyRow(row)) continue;
 
     const excelRowNum = r + 1;
-    const id = parseNumberOrNull(row[idIdx]);
-    const customer_name = String(row[nameIdx] ?? "").trim();
-    const available_farms = parseIdList(row[farmsIdx]);
-    const max = parseNumberRequired(row[maxIdx]);
-    const exp = parseNumberRequired(row[expIdx]);
+    const customer_code = parseString(row[codeIdx]);
+    const customer_name = parseString(row[nameIdx]);
+    const client = parseStringList(row[clientIdx]);
+    const available_farms = parseStringList(row[farmsIdx]);
+    const maxReq = parseNumberRequired(row[maxIdx]);
+    const expReq = parseNumberRequired(row[expIdx]);
 
     const errs = [];
-    if (!customer_name) errs.push("고객사명 필수");
-    if (!max.ok) errs.push("납고가능 일수 숫자 필수");
-    if (!exp.ok) errs.push("유통기한 숫자 필수");
+    if (!customer_code) errs.push("customer_code required");
+    if (!customer_name) errs.push("customer_name required");
+    if (!maxReq.ok) errs.push("max_laying_days required numeric");
+    if (!expReq.ok) errs.push("expiration_date required numeric");
 
     const parsed = {
       __rowNum: excelRowNum,
-      ...(id != null ? { id } : {}),
+      customer_code,
       customer_name,
+      client,
       available_farms,
-      max_laying_days: max.value,
-      expiration_date: exp.value,
+      max_laying_days: maxReq.value,
+      expiration_date: expReq.value,
     };
 
     if (errs.length) {
@@ -773,46 +658,46 @@ export function parseCustomerAOA(aoa) {
     }
     out.rows.push(parsed);
   }
-
   return out;
 }
 
 export function parseFarmAOA(aoa) {
   const out = { rows: [], errors: [] };
-  if (!Array.isArray(aoa) || aoa.length === 0) return out;
+  if (!Array.isArray(aoa) || !aoa.length) return out;
 
-  const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
+  const headerRowIdx = findHeaderRow(aoa, FARM_HEADER_ALIASES);
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID", "농장id"]);
-  const nameIdx = idxOfHeader(headers, ["farm_name", "농장명"]);
-  const shellIdx = idxOfHeader(headers, ["shell_number", "난각번호"]);
-  const typeIdx = idxOfHeader(headers, ["farm_type", "농장유형"]);
-  const antiIdx = idxOfHeader(headers, ["antibiotic_free", "무항생제"]);
-  const haccpIdx = idxOfHeader(headers, ["haccp", "HACCP"]);
-  const orgIdx = idxOfHeader(headers, ["organic", "유기농"]);
+  const farmIdIdx = idxOfHeader(headers, ["농장식별자", "farm_id", "farmid"]);
+  const nameIdx = idxOfHeader(headers, ["농장명", "farm_name", "farmname"]);
+  const shellIdx = idxOfHeader(headers, ["산란번호", "shell_number", "shellnumber"]);
+  const typeIdx = idxOfHeader(headers, ["농장유형", "farm_type", "farmtype"]);
+  const antiIdx = idxOfHeader(headers, ["무항생제", "antibiotic_free", "antibioticfree"]);
+  const haccpIdx = idxOfHeader(headers, ["HACCP", "haccp"]);
+  const orgIdx = idxOfHeader(headers, ["유기농", "organic"]);
 
   for (let r = headerRowIdx + 1; r < aoa.length; r += 1) {
     const row = aoa[r] || [];
     if (isEmptyRow(row)) continue;
 
     const excelRowNum = r + 1;
-    const id = parseNumberOrNull(row[idIdx]);
-    const farm_name = String(row[nameIdx] ?? "").trim();
-    const shell_number = parseNumberOrNull(row[shellIdx]);
-    const farm_type = String(row[typeIdx] ?? "").trim();
+    const farm_id = parseString(row[farmIdIdx]);
+    const farm_name = parseString(row[nameIdx]);
+    const shell_number = parseString(row[shellIdx]);
+    const farm_type = normalizeFarmType(parseString(row[typeIdx]));
     const antibiotic_free = antiIdx >= 0 ? parseBool(row[antiIdx]) : undefined;
     const haccp = haccpIdx >= 0 ? parseBool(row[haccpIdx]) : undefined;
     const organic = orgIdx >= 0 ? parseBool(row[orgIdx]) : undefined;
 
     const errs = [];
-    if (!farm_name) errs.push("농장명 필수");
+    if (!farm_id) errs.push("farm_id required");
+    if (!farm_name) errs.push("farm_name required");
 
     const parsed = {
       __rowNum: excelRowNum,
-      ...(id != null ? { id } : {}),
+      farm_id,
       farm_name,
-      ...(shell_number != null ? { shell_number } : {}),
+      ...(shell_number ? { shell_number } : {}),
       ...(farm_type ? { farm_type } : {}),
       ...(antibiotic_free !== undefined ? { antibiotic_free } : {}),
       ...(haccp !== undefined ? { haccp } : {}),
@@ -826,82 +711,73 @@ export function parseFarmAOA(aoa) {
     }
     out.rows.push(parsed);
   }
-
   return out;
 }
 
 export function parseProductAOA(aoa) {
   const out = { rows: [], errors: [] };
-  if (!Array.isArray(aoa) || aoa.length === 0) return out;
+  if (!Array.isArray(aoa) || !aoa.length) return out;
 
-  const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
+  const headerRowIdx = findHeaderRow(aoa, PRODUCT_HEADER_ALIASES);
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID", "제품id"]);
-  const nameIdx = idxOfHeader(headers, ["product_name", "제품명"]);
-  const customerIdx = idxOfHeader(headers, ["customer", "고객사id", "고객사ID"]);
-  const eggCountIdx = idxOfHeader(headers, ["egg_count", "계란수"]);
-  const breedIdx = idxOfHeader(headers, ["breeding_number", "사육번호"]);
-  const farmTypeIdx = idxOfHeader(headers, ["farm_type", "농장유형"]);
-  const gradeIdx = idxOfHeader(headers, ["egg_grade", "계란등급"]);
-  const weightIdx = idxOfHeader(headers, ["egg_weight", "난중"]);
-  const processIdx = idxOfHeader(headers, ["process_type", "가공여부"]);
-  const maxIdx = idxOfHeader(headers, ["max_laying_days", "납고가능 일수"]);
-  const expIdx = idxOfHeader(headers, ["expiration_date", "유통기한"]);
-  const antiIdx = idxOfHeader(headers, ["antibiotic_free", "무항생제"]);
-  const haccpIdx = idxOfHeader(headers, ["haccp", "HACCP"]);
-  const orgIdx = idxOfHeader(headers, ["organic", "유기농"]);
+  const productNoIdx = idxOfHeader(headers, ["제품식별자", "product_no", "productid", "product_id"]);
+  const nameIdx = idxOfHeader(headers, ["제품명", "product_name", "productname"]);
+  const customerIdx = idxOfHeader(headers, ["고객사코드", "고객사", "customer_code", "customerid", "customer_id"]);
+  const eggCountIdx = idxOfHeader(headers, ["계란수", "egg_count", "eggcount"]);
+  const breedIdx = idxOfHeader(headers, ["사육번호목록", "breeding_number", "breedingnumber"]);
+  const farmTypeIdx = idxOfHeader(headers, ["농장유형", "farm_type", "farmtype"]);
+  const gradeIdx = idxOfHeader(headers, ["계란등급", "egg_grade", "egggrade"]);
+  const weightIdx = idxOfHeader(headers, ["중량", "egg_weight", "eggweight"]);
+  const processIdx = idxOfHeader(headers, ["계란유형", "process_type", "processtype", "egg_type", "eggtype"]);
+  const maxIdx = idxOfHeader(headers, ["최대산란일수", "max_laying_days", "maxlayingdays"]);
+  const expIdx = idxOfHeader(headers, ["유통기한", "expiration_date", "expirationdate"]);
+  const antiIdx = idxOfHeader(headers, ["무항생제", "antibiotic_free", "antibioticfree"]);
+  const haccpIdx = idxOfHeader(headers, ["HACCP", "haccp"]);
+  const orgIdx = idxOfHeader(headers, ["유기농", "organic"]);
 
   for (let r = headerRowIdx + 1; r < aoa.length; r += 1) {
     const row = aoa[r] || [];
     if (isEmptyRow(row)) continue;
 
     const excelRowNum = r + 1;
-
-    const id = parseNumberOrNull(row[idIdx]);
-    const product_name = String(row[nameIdx] ?? "").trim();
-
-    const customerReq = parseNumberRequired(row[customerIdx]);
+    const product_no = parseString(row[productNoIdx]);
+    const product_name = parseString(row[nameIdx]);
+    const customer_code = parseString(row[customerIdx]);
     const eggCountReq = parseNumberRequired(row[eggCountIdx]);
-    const breedReq = parseNumberRequired(row[breedIdx]);
-
-    const farm_type = String(row[farmTypeIdx] ?? "").trim();
-    const egg_grade = String(row[gradeIdx] ?? "").trim();
-    const egg_weight = String(row[weightIdx] ?? "").trim();
-    const process_type = String(row[processIdx] ?? "").trim();
-
-    const max = parseNumberOrNull(row[maxIdx]);
-    const exp = parseNumberOrNull(row[expIdx]);
-
+    const breeding_number = parseNumberList(row[breedIdx]);
+    const farm_type = normalizeFarmType(parseString(row[farmTypeIdx]));
+    const egg_grade = normalizeEggGrade(row[gradeIdx]);
+    const egg_weight = parseString(row[weightIdx]);
+    const process_type = parseString(row[processIdx]);
+    const max_laying_days = parseNumberOrNull(row[maxIdx]);
+    const expiration_date = parseNumberOrNull(row[expIdx]);
     const antibiotic_free = antiIdx >= 0 ? parseBool(row[antiIdx]) : undefined;
     const haccp = haccpIdx >= 0 ? parseBool(row[haccpIdx]) : undefined;
     const organic = orgIdx >= 0 ? parseBool(row[orgIdx]) : undefined;
 
     const errs = [];
-    if (!product_name) errs.push("제품명 필수");
-    if (!customerReq.ok) errs.push("고객사ID 숫자 필수");
-    if (!eggCountReq.ok) errs.push("계란수 숫자 필수");
-    if (!breedReq.ok) errs.push("사육번호 숫자 필수");
-
-    // Keep these required to match existing UI expectations (기존 템플릿은 필수)
-    if (!farm_type) errs.push("농장유형 필수");
-    if (!egg_grade) errs.push("계란등급 필수");
-    if (!egg_weight) errs.push("난중 필수");
-    if (!process_type) errs.push("가공여부 필수");
+    if (!product_no) errs.push("product_no required");
+    if (!product_name) errs.push("product_name required");
+    if (!customer_code) errs.push("customer_code required");
+    if (!eggCountReq.ok) errs.push("egg_count required numeric");
+    if (!farm_type) errs.push("farm_type required");
+    if (!egg_weight) errs.push("egg_weight required");
+    if (!process_type) errs.push("process_type required");
 
     const parsed = {
       __rowNum: excelRowNum,
-      ...(id != null ? { id } : {}),
+      product_no,
       product_name,
-      customer: customerReq.value,
+      customer_code,
       egg_count: eggCountReq.value,
-      breeding_number: breedReq.value,
+      breeding_number,
       farm_type,
       egg_grade,
       egg_weight,
       process_type,
-      ...(max != null ? { max_laying_days: max } : {}),
-      ...(exp != null ? { expiration_date: exp } : {}),
+      ...(max_laying_days != null ? { max_laying_days } : {}),
+      ...(expiration_date != null ? { expiration_date } : {}),
       ...(antibiotic_free !== undefined ? { antibiotic_free } : {}),
       ...(haccp !== undefined ? { haccp } : {}),
       ...(organic !== undefined ? { organic } : {}),
@@ -914,88 +790,72 @@ export function parseProductAOA(aoa) {
     }
     out.rows.push(parsed);
   }
-
   return out;
 }
 
-// -----------------------
-// Inventory parsers
-// -----------------------
-
 export function parseEggLotAOA(aoa) {
   const out = { rows: [], errors: [] };
-  if (!Array.isArray(aoa) || aoa.length === 0) return out;
+  if (!Array.isArray(aoa) || !aoa.length) return out;
 
-  const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
+  const headerRowIdx = findHeaderRow(aoa, EGGLOT_HEADER_ALIASES);
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID", "계란재고ID"]);
-  const farmIdx = idxOfHeader(headers, ["farm", "농장ID"]);
-  const recvIdx = idxOfHeader(headers, ["receiving_date", "입고일"]);
-  const shellIdx = idxOfHeader(headers, ["shell_number", "난각번호"]);
-  const breedIdx = idxOfHeader(headers, ["breeding_number", "사육번호"]);
-  const farmTypeIdx = idxOfHeader(headers, ["farm_type", "농장유형"]);
-  const ageIdx = idxOfHeader(headers, ["age_weeks", "주령", "주령(주)"]);
-  const eggTypeIdx = idxOfHeader(headers, ["egg_type", "가공"]);
-  const weightIdx = idxOfHeader(headers, ["egg_weight", "난중", "중량"]);
-  const layingIdx = idxOfHeader(headers, ["laying_date", "산란일"]);
-  const gradeIdx = idxOfHeader(headers, ["egg_grade", "등급"]);
-  const locIdx = idxOfHeader(headers, ["location", "위치"]);
-  const qtyIdx = idxOfHeader(headers, ["quantity", "수량"]);
-  const memoIdx = idxOfHeader(headers, ["memo", "메모"]);
-  const activeIdx = idxOfHeader(headers, ["is_active", "활성", "활성여부"]);
+  const lotNoIdx = idxOfHeader(headers, ["계란재고식별자", "계란식별자", "egglot_no", "egglotid", "egg_lot_id"]);
+  const farmIdIdx = idxOfHeader(headers, ["농장", "farm_id", "farmid"]);
+  const recvIdx = idxOfHeader(headers, ["입고일", "receiving_date", "receivingdate"]);
+  const shellIdx = idxOfHeader(headers, ["산란번호", "shell_number", "shellnumber"]);
+  const breedIdx = idxOfHeader(headers, ["사육번호", "breeding_number", "breedingnumber"]);
+  const farmTypeIdx = idxOfHeader(headers, ["농장유형", "farm_type", "farmtype"]);
+  const ageIdx = idxOfHeader(headers, ["주령", "age_weeks", "ageweeks"]);
+  const weightIdx = idxOfHeader(headers, ["중량", "egg_weight", "eggweight"]);
+  const layingIdx = idxOfHeader(headers, ["산란일", "laying_date", "layingdate"]);
+  const gradeIdx = idxOfHeader(headers, ["계란등급", "egg_grade", "egggrade"]);
+  const locIdx = idxOfHeader(headers, ["위치", "location"]);
+  const qtyIdx = idxOfHeader(headers, ["수량", "quantity"]);
+  const memoIdx = idxOfHeader(headers, ["메모", "memo"]);
 
   for (let r = headerRowIdx + 1; r < aoa.length; r += 1) {
     const row = aoa[r] || [];
     if (isEmptyRow(row)) continue;
 
     const excelRowNum = r + 1;
-    const id = parseNumberOrNull(row[idIdx]);
-    const farmReq = parseNumberRequired(row[farmIdx]);
-    const recvReq = parseDateRequired(row[recvIdx]);
-    const layingReq = parseDateRequired(row[layingIdx]);
-    const ageReq = parseNumberRequired(row[ageIdx]);
-    const qtyReq = parseNumberRequired(row[qtyIdx]);
-
-    const egg_weight = String(row[weightIdx] ?? "").trim();
-    const egg_grade = String(row[gradeIdx] ?? "").trim();
-
-    const shell_number = String(row[shellIdx] ?? "").trim();
+    const Egglot_no = parseString(row[lotNoIdx]);
+    const farm_id = parseString(row[farmIdIdx]);
+    const receivingReq = parseDateRequired(row[recvIdx]);
+    const shell_number = parseString(row[shellIdx]);
     const breeding_number = parseNumberOrNull(row[breedIdx]);
-    const farm_type = String(row[farmTypeIdx] ?? "").trim();
-    const egg_type = String(row[eggTypeIdx] ?? "").trim();
-    const location = String(row[locIdx] ?? "").trim();
-    const memo = String(row[memoIdx] ?? "").trim();
-
-    const activeRaw = String(row[activeIdx] ?? "").trim();
-    const is_active = activeRaw ? parseBool(activeRaw) : undefined;
+    const farm_type = normalizeFarmType(parseString(row[farmTypeIdx]));
+    const ageReq = parseNumberRequired(row[ageIdx]);
+    const egg_weight = parseString(row[weightIdx]);
+    const layingReq = parseDateRequired(row[layingIdx]);
+    const egg_grade = normalizeEggGrade(row[gradeIdx]);
+    const location = parseString(row[locIdx]);
+    const qtyReq = parseNumberRequired(row[qtyIdx]);
+    const memo = parseString(row[memoIdx]);
 
     const errs = [];
-    if (!farmReq.ok) errs.push("농장ID 숫자 필수");
-    if (!recvReq.ok) errs.push("입고일(YYYY-MM-DD) 필수");
-    if (!layingReq.ok) errs.push("산란일(YYYY-MM-DD) 필수");
-    if (!ageReq.ok) errs.push("주령(주) 숫자 필수");
-    if (!egg_weight) errs.push("난중 필수");
-    if (!egg_grade) errs.push("등급 필수");
-    if (!qtyReq.ok) errs.push("수량 숫자 필수");
+    if (!farm_id) errs.push("farm_id required");
+    if (!receivingReq.ok) errs.push("receiving_date required YYYY-MM-DD");
+    if (!ageReq.ok) errs.push("age_weeks required numeric");
+    if (!egg_weight) errs.push("egg_weight required");
+    if (!layingReq.ok) errs.push("laying_date required YYYY-MM-DD");
+    if (!qtyReq.ok) errs.push("quantity required numeric");
 
     const parsed = {
       __rowNum: excelRowNum,
-      ...(id != null ? { id } : {}),
-      farm: farmReq.value,
-      receiving_date: recvReq.value,
-      laying_date: layingReq.value,
-      age_weeks: ageReq.value,
-      egg_weight,
-      egg_grade,
+      ...(Egglot_no ? { Egglot_no } : {}),
+      farm_id,
+      receiving_date: receivingReq.value,
       ...(shell_number ? { shell_number } : {}),
       ...(breeding_number != null ? { breeding_number } : {}),
       ...(farm_type ? { farm_type } : {}),
-      ...(egg_type ? { egg_type } : {}),
+      age_weeks: ageReq.value,
+      egg_weight,
+      laying_date: layingReq.value,
+      egg_grade,
       ...(location ? { location } : {}),
       quantity: qtyReq.value,
       ...(memo ? { memo } : {}),
-      ...(is_active !== undefined ? { is_active } : {}),
     };
 
     if (errs.length) {
@@ -1003,57 +863,57 @@ export function parseEggLotAOA(aoa) {
       parsed.__invalid = true;
       parsed.__error = errs.join(" / ");
     }
-
     out.rows.push(parsed);
   }
-
   return out;
 }
 
 export function parseProductLotAOA(aoa) {
   const out = { rows: [], errors: [] };
-  if (!Array.isArray(aoa) || aoa.length === 0) return out;
+  if (!Array.isArray(aoa) || !aoa.length) return out;
 
-  const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
+  const headerRowIdx = findHeaderRow(aoa, PRODUCTLOT_HEADER_ALIASES);
   const headers = aoa[headerRowIdx] || [];
 
-  const idIdx = idxOfHeader(headers, ["id", "ID", "제품재고ID"]);
-  const productIdx = idxOfHeader(headers, ["product", "제품ID"]);
-  const eggLotIdx = idxOfHeader(headers, ["egg_lot", "계란재고ID"]);
-  const qtyIdx = idxOfHeader(headers, ["quantity", "수량"]);
-  const locIdx = idxOfHeader(headers, ["location", "위치"]);
-  const memoIdx = idxOfHeader(headers, ["memo", "메모"]);
-  const activeIdx = idxOfHeader(headers, ["is_active", "활성", "활성여부"]);
+  const lotNoIdx = idxOfHeader(headers, ["제품재고식별자", "제품로트식별자", "productlot_no", "productlotid", "product_lot_id"]);
+  const productIdx = idxOfHeader(headers, ["제품", "제품식별자", "product_id", "productid", "product_no"]);
+  const eggLotIdx = idxOfHeader(headers, ["계란식별자", "계란재고식별자", "원란식별자", "egg_lot_id", "egglotid", "egglot_no"]);
+  const qtyIdx = idxOfHeader(headers, ["수량", "quantity"]);
+  const locIdx = idxOfHeader(headers, ["위치", "location"]);
+  const processDayIdx = idxOfHeader(headers, ["공정일", "process_day", "processday"]);
+  const machineIdx = idxOfHeader(headers, ["라인", "machine_line", "machineline"]);
+  const memoIdx = idxOfHeader(headers, ["메모", "memo"]);
 
   for (let r = headerRowIdx + 1; r < aoa.length; r += 1) {
     const row = aoa[r] || [];
     if (isEmptyRow(row)) continue;
 
     const excelRowNum = r + 1;
-    const id = parseNumberOrNull(row[idIdx]);
-    const productReq = parseNumberRequired(row[productIdx]);
-    const eggLotReq = parseNumberRequired(row[eggLotIdx]);
+    const ProductLot_no = parseString(row[lotNoIdx]);
+    const product_id = parseString(row[productIdx]);
+    const egg_lot_id = parseString(row[eggLotIdx]);
     const qtyReq = parseNumberRequired(row[qtyIdx]);
-    const location = String(row[locIdx] ?? "").trim();
-    const memo = String(row[memoIdx] ?? "").trim();
-    const activeRaw = String(row[activeIdx] ?? "").trim();
-    const is_active = activeRaw ? parseBool(activeRaw) : undefined;
+    const location = parseString(row[locIdx]);
+    const process_day = normalizeYMD(row[processDayIdx]);
+    const machine_line = parseString(row[machineIdx]);
+    const memo = parseString(row[memoIdx]);
 
     const errs = [];
-    if (!productReq.ok) errs.push("제품ID 숫자 필수");
-    if (!eggLotReq.ok) errs.push("계란재고ID 숫자 필수");
-    if (!qtyReq.ok) errs.push("수량 숫자 필수");
-    if (!location) errs.push("위치 필수");
+    if (!product_id) errs.push("product_id required");
+    if (!egg_lot_id) errs.push("egg_lot_id required");
+    if (!qtyReq.ok) errs.push("quantity required numeric");
+    if (!location) errs.push("location required");
 
     const parsed = {
       __rowNum: excelRowNum,
-      ...(id != null ? { id } : {}),
-      product: productReq.value,
-      egg_lot: eggLotReq.value,
+      ...(ProductLot_no ? { ProductLot_no } : {}),
+      product_id,
+      egg_lot_id,
       quantity: qtyReq.value,
       location,
+      ...(process_day ? { process_day } : {}),
+      ...(machine_line ? { machine_line } : {}),
       ...(memo ? { memo } : {}),
-      ...(is_active !== undefined ? { is_active } : {}),
     };
 
     if (errs.length) {
@@ -1063,19 +923,17 @@ export function parseProductLotAOA(aoa) {
     }
     out.rows.push(parsed);
   }
-
   return out;
 }
 
 export function parseHistoryMemoAOA(aoa) {
   const out = { rows: [], errors: [] };
-  if (!Array.isArray(aoa) || aoa.length === 0) return out;
+  if (!Array.isArray(aoa) || !aoa.length) return out;
 
-  const headerRowIdx = aoa.length >= 3 && !isEmptyRow(aoa[2]) ? 2 : 0;
+  const headerRowIdx = findHeaderRow(aoa, HISTORY_MEMO_HEADER_ALIASES);
   const headers = aoa[headerRowIdx] || [];
-
-  const idIdx = idxOfHeader(headers, ["id", "ID"]);
-  const memoIdx = idxOfHeader(headers, ["memo", "메모"]);
+  const idIdx = idxOfHeader(headers, ["id", "ID", "계란 변경내역ID", "제품 변경내역ID", "변경내역ID"]);
+  const memoIdx = idxOfHeader(headers, ["memo", "메모", "변경내역 메모"]);
 
   for (let r = headerRowIdx + 1; r < aoa.length; r += 1) {
     const row = aoa[r] || [];
@@ -1083,11 +941,11 @@ export function parseHistoryMemoAOA(aoa) {
 
     const excelRowNum = r + 1;
     const idReq = parseNumberRequired(row[idIdx]);
-    const memo = String(row[memoIdx] ?? "").trim();
+    const memo = parseString(row[memoIdx]);
 
     const errs = [];
-    if (!idReq.ok) errs.push("ID 숫자 필수");
-    if (!memo) errs.push("메모 필수");
+    if (!idReq.ok) errs.push("id required numeric");
+    if (!memo) errs.push("memo required");
 
     const parsed = {
       __rowNum: excelRowNum,
@@ -1102,6 +960,5 @@ export function parseHistoryMemoAOA(aoa) {
     }
     out.rows.push(parsed);
   }
-
   return out;
 }

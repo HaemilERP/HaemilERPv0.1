@@ -39,6 +39,45 @@
   min-height: auto;
 }
 
+/* ProductInfo: min/max filters should stay side-by-side (50/50) */
+.accounting-page.product-info-page .range-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-8);
+  width: 100%;
+}
+
+.accounting-page.product-info-page .range-row .filter-input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* CustomerInfo: min/max filters should stay side-by-side (50/50) */
+.accounting-page.customer-info-page .range-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-8);
+  width: 100%;
+}
+
+.accounting-page.customer-info-page .range-row .filter-input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* Inventory: range filters should stay side-by-side (50/50) */
+.accounting-page.inventory-page .range-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-8);
+  width: 100%;
+}
+
+.accounting-page.inventory-page .range-row .filter-input {
+  width: 100%;
+  min-width: 0;
+}
+
 .filters-title {
   font-weight: 800;
   margin-bottom: var(--sp-10);
@@ -379,6 +418,21 @@
 
 /* Inventory: 작업 버튼이 줄바꿈되어 세로로 쌓이지 않도록 고정 */
 .accounting-page.inventory-page .data-table td.actions-cell .row-actions {
+  flex-wrap: nowrap;
+  white-space: nowrap;
+}
+
+/* ProductInfo: keep action buttons horizontal, centered, and on one line */
+.accounting-page.product-info-page .data-table th.actions-cell,
+.accounting-page.product-info-page .data-table td.actions-cell {
+  text-align: center;
+  min-width: 160px;
+}
+
+.accounting-page.product-info-page .data-table td.actions-cell .row-actions {
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
   flex-wrap: nowrap;
   white-space: nowrap;
 }

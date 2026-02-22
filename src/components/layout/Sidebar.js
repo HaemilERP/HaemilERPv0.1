@@ -15,7 +15,7 @@ const ITEMS_BY_MODULE = {
     {
       group: "main",
       title: "개요",
-      links: [{ to: "/dashboard", label: "대시보드 홈" }],
+      links: [{ to: "/dashboard", label: "대시보드" }],
     },
   ],
   hr: [
@@ -30,7 +30,7 @@ const ITEMS_BY_MODULE = {
   ],
   accounting: [
     {
-      group: "customerinfo",
+      group: "customer-info",
       title: "고객사정보",
       links: [
         { to: "/accounting/customer-info", label: "고객사정보" },
@@ -38,7 +38,7 @@ const ITEMS_BY_MODULE = {
       ],
     },
     {
-      group: "farminfo",
+      group: "farm-info",
       title: "농장정보",
       links: [
         { to: "/accounting/farm-info", label: "농장정보" },
@@ -46,7 +46,7 @@ const ITEMS_BY_MODULE = {
       ],
     },
     {
-      group: "productinfo",
+      group: "product-info",
       title: "제품정보",
       links: [
         { to: "/accounting/product-info", label: "제품정보" },
@@ -85,7 +85,9 @@ const ITEMS_BY_MODULE = {
       title: "발주",
       links: [
         { to: "/purchase", label: "발주" },
+        { to: "/purchase/quantity-confirmation", label: "생산수량확정" },
         { to: "/purchase/egg-matching", label: "원란매칭" },
+        { to: "/purchase/work-orders", label: "작업지시서" },
       ],
     },
   ],
@@ -107,7 +109,6 @@ export default function Sidebar() {
   }, [pathname]);
 
   useEffect(() => {
-    // 모듈이 바뀌면 아코디언 상태 초기화
     setOpenSet(new Set());
   }, [moduleKey]);
 
@@ -148,11 +149,6 @@ export default function Sidebar() {
                     key={l.to}
                     to={l.to}
                     className={({ isActive }) => (isActive ? "active" : "")}
-                    // react-router v6 NavLink 는 기본적으로 prefix match 입니다.
-                    // 예: /accounting/customer-info/excel 에서는
-                    // /accounting/customer-info 도 active 로 잡혀 2개가 동시에 하이라이트됩니다.
-                    // 같은 섹션 내에서 '하위 경로를 가진 링크'는 exact(end) 매칭으로 바꿔
-                    // 현재 페이지에 해당하는 메뉴만 하이라이트되도록 합니다.
                     end={shouldEndMatch(sec.links, l.to)}
                   >
                     {l.label}

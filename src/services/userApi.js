@@ -12,6 +12,11 @@ export async function listEmployees() {
   return unwrapList(res.data);
 }
 
+export async function getMyAccount() {
+  const res = await api.get(API_PATHS.me);
+  return res.data;
+}
+
 export async function updateUserPassword(id, newPassword) {
   const payload = { password: newPassword };
 

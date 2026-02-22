@@ -107,8 +107,8 @@ export default function EggInventoryHistoryExcel() {
               <thead>
                 <tr>
                   <th>Excel 행</th>
-                  <th>ID</th>
-                  <th>메모</th>
+                  <th>계란 변경내역ID</th>
+                  <th>변경내역 메모</th>
                 </tr>
               </thead>
               <tbody>

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listEggLotHistories, patchEggLotHistory } from "../../services/inventoryApi";
+import { listEggLotHistories } from "../../services/inventoryApi";
 import { listFarms } from "../../services/accountingApi";
-import { asText, includesText, matchBool, parseDRFErrors } from "../../utils/helpers";
+import { asText, includesText, matchBool } from "../../utils/helpers";
 import { downloadEggLotHistoryListXlsx } from "../../utils/excel";
 import SearchBar from "../../components/common/SearchBar";
 import Pagination from "../../components/common/Pagination";
@@ -82,29 +82,6 @@ export default function EggInventoryHistory() {
   // Pagination
   const [page, setPage] = useState(1);
   const pageSize = 10;
-
-  // memo edit
-  const [memoModalOpen, setMemoModalOpen] = useState(false);
-  const [memoTarget, setMemoTarget] = useState(null);
-  const [memoText, setMemoText] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [formErr, setFormErr] = useState("");
-  const [fieldErrs, setFieldErrs] = useState({});
-
-  const closeMemoModal = useCallback(() => {
-    if (submitting) return;
-    setMemoModalOpen(false);
-  }, [submitting]);
-
-  // ✅ ESC로 팝업 닫기
-  useEffect(() => {
-    if (!memoModalOpen) return;
-    const onKeyDown = (e) => {
-      if (e.key === "Escape") closeMemoModal();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [memoModalOpen, closeMemoModal]);
 
   const SEARCH_FIELDS = [
     { value: "all", label: "전체" },
@@ -203,32 +180,6 @@ export default function EggInventoryHistory() {
     setPage(1);
   }, [searchField, searchText, fChangeType, fHasMemo, fFrom, fTo]);
 
-  function openMemo(r) {
-    setMemoTarget(r);
-    setMemoText(asText(r?.memo));
-    setFormErr("");
-    setFieldErrs({});
-    setMemoModalOpen(true);
-  }
-
-  async function saveMemo() {
-    if (!memoTarget?.id || submitting) return;
-    setSubmitting(true);
-    setFormErr("");
-    setFieldErrs({});
-    try {
-      await patchEggLotHistory(memoTarget.id, { memo: memoText });
-      setMemoModalOpen(false);
-      await fetchRows();
-    } catch (e) {
-      const parsed = e?.response?.data ? parseDRFErrors(e.response.data) : null;
-      setFormErr(parsed?.form || "저장에 실패했습니다.");
-      setFieldErrs(parsed?.fields || {});
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   async function onExport() {
     const body = filtered.map((r) => [
       r.id ?? "",
@@ -316,8 +267,7 @@ export default function EggInventoryHistory() {
               <col style={{ width: "7%" }} />
               <col style={{ width: "10%" }} />
               <col style={{ width: "18%" }} />
-              <col style={{ width: "12%" }} />
-              <col style={{ width: "8%" }} />
+              <col style={{ width: "20%" }} />
             </colgroup>
             <thead>
               <tr>
@@ -329,14 +279,13 @@ export default function EggInventoryHistory() {
                 <th className="num-cell">변화량</th>
                 <th>변경자</th>
                 <th>변경일시</th>
-                <th>메모</th>
-                <th className="actions-cell">관리</th>
+                <th>변경내역 메모</th>
               </tr>
             </thead>
             <tbody>
               {!loading && !pageRows.length && (
                 <tr>
-                  <td colSpan={10} className="muted" style={{ textAlign: "left" }}>
+                  <td colSpan={9} className="muted" style={{ textAlign: "left" }}>
                     데이터가 없습니다.
                   </td>
                 </tr>
@@ -353,13 +302,6 @@ export default function EggInventoryHistory() {
                   <td className="wrap-cell">{userToLabel(r.changed_by) || "-"}</td>
                   <td>{formatYMDHMS(r.changed_at)}</td>
                   <td className="wrap-cell">{asText(r.memo)}</td>
-                  <td className="actions-cell">
-                    <div className="row-actions">
-                      <button className="btn small secondary" type="button" onClick={() => openMemo(r)}>
-                        메모
-                      </button>
-                    </div>
-                  </td>
                 </tr>
               ))}
             </tbody>
@@ -370,42 +312,6 @@ export default function EggInventoryHistory() {
           <Pagination page={page} setPage={setPage} totalPages={totalPages} />
         </div>
       </section>
-
-      {memoModalOpen && (
-        <div className="modal-overlay" onMouseDown={closeMemoModal}>
-          <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
-            <div className="modal-head">
-              <h3 className="modal-title">변경내역 메모</h3>
-              <button className="btn secondary" type="button" onClick={closeMemoModal} disabled={submitting}>
-                닫기
-              </button>
-            </div>
-
-            <div className="modal-body">
-              <div className="muted">
-                대상: {memoTarget ? eggLotToLabel(memoTarget.egg_lot, farms) : ""} / 변경유형: {memoTarget ? (CHANGE_TYPE_LABEL[memoTarget.change_type] || memoTarget.change_type) : ""}
-              </div>
-
-              {formErr && <div className="field-error" style={{ marginTop: "var(--sp-10)" }}>{formErr}</div>}
-              {fieldErrs.memo && <div className="field-error" style={{ marginTop: "var(--sp-10)" }}>{fieldErrs.memo}</div>}
-
-              <div className="field" style={{ marginTop: "var(--sp-10)" }}>
-                <textarea value={memoText} onChange={(e) => setMemoText(e.target.value)} rows={6} />
-                <div className="field-help">변경내역에 대한 코멘트를 남길 수 있습니다.</div>
-              </div>
-            </div>
-
-            <div className="modal-foot">
-              <button className="btn secondary" type="button" onClick={closeMemoModal} disabled={submitting}>
-                취소
-              </button>
-              <button className="btn" type="button" onClick={saveMemo} disabled={submitting}>
-                {submitting ? "저장 중..." : "저장"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

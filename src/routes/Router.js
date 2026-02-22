@@ -11,6 +11,8 @@ import Accounting from "../pages/Accounting";
 import Inventory from "../pages/Inventory";
 import Purchase from "../pages/purchase/Purchase";
 import OrderEggMatching from "../pages/purchase/OrderEggMatching";
+import QuantityConfirmation from "../pages/purchase/QuantityConfirmation";
+import WorkOrders from "../pages/purchase/WorkOrders";
 
 import Employees from "../pages/hr/Employees";
 import AddEmployee from "../pages/hr/AddEmployee";
@@ -61,8 +63,9 @@ export default function Router() {
             <Route path="/inventory/materials-inventory" element={<MaterialsInventory />} />
 
             <Route path="/purchase" element={<Purchase />} />
-
+            <Route path="/purchase/quantity-confirmation" element={<QuantityConfirmation />} />
             <Route path="/purchase/egg-matching" element={<OrderEggMatching />} />
+            <Route path="/purchase/work-orders" element={<WorkOrders />} />
 
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Route>

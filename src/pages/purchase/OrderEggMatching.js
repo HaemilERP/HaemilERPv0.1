@@ -6,20 +6,15 @@ import "./Purchase.css";
 
 import { listCustomers, listProducts } from "../../services/accountingApi";
 import { listEggLots } from "../../services/inventoryApi";
-import { getOrder, listOrders } from "../../services/purchaseApi";
 import {
-  loadOrderMatch,
-  saveOrderMatch,
-} from "../../utils/orderMatchLocal";
-import { getApiErrorMessage } from "../../utils/helpers";
-
-const EGG_WEIGHT_RANK = {
-  "소란": 1,
-  "중란": 2,
-  "대란": 3,
-  "특란": 4,
-  "왕란": 5,
-};
+  createMatchingEgg,
+  deleteMatchingEgg,
+  getOrder,
+  listMatchingEggs,
+  listOrders,
+  patchMatchingEgg,
+} from "../../services/purchaseApi";
+import { asText, getApiErrorMessage, getIdentifierLabel, normalizeFarmType } from "../../utils/helpers";
 
 function ymd(v) {
   if (!v) return "";
@@ -32,16 +27,70 @@ function num(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function fmt(n) {
-  const v = num(n, 0);
-  return v.toLocaleString();
+function fmt(v) {
+  return num(v, 0).toLocaleString();
+}
+
+function toPk(v) {
+  if (v == null) return "";
+  if (typeof v === "object") return String(v.id ?? v.pk ?? "");
+  return String(v);
+}
+
+function getOrderPk(order) {
+  return order?.id ?? null;
+}
+
+function getOrderLabel(order) {
+  return getIdentifierLabel(order, ["order_id"], ["id"]);
+}
+
+function getCustomerLabel(customer) {
+  const code = getIdentifierLabel(customer, ["customer_code", "customer_id"], []);
+  const name = asText(customer?.customer_name);
+  if (name && code) return `${name} (${code})`;
+  return name || code || "-";
+}
+
+function getProductLabel(product) {
+  const code = getIdentifierLabel(product, ["product_no", "product_id"], []);
+  const name = asText(product?.product_name);
+  if (name && code) return `${name} (${code})`;
+  return name || code || "-";
+}
+
+function getLotPk(lot) {
+  return lot?.id ?? null;
+}
+
+function getLotLabel(lot) {
+  const no = getIdentifierLabel(lot, ["Egglot_no", "egg_lot_id"], ["id"]);
+  const farm =
+    typeof lot?.farm === "object"
+      ? getIdentifierLabel(lot.farm, ["farm_id"], ["id"])
+      : asText(lot?.farm);
+  const qty = num(lot?.quantity, 0);
+  const parts = [no, farm ? `farm:${farm}` : "", qty ? `qty:${fmt(qty)}` : ""].filter(Boolean);
+  return parts.join(" / ");
+}
+
+async function listOrderMatches(orderPk) {
+  if (!orderPk) return [];
+  try {
+    return await listMatchingEggs({ order: orderPk });
+  } catch {
+    try {
+      return await listMatchingEggs({ order_id: orderPk });
+    } catch {
+      return [];
+    }
+  }
 }
 
 export default function OrderEggMatching() {
   const nav = useNavigate();
   const [sp, setSp] = useSearchParams();
 
-  // 출고일자는 사용자가 직접 선택/입력합니다(기본값: 빈 값)
   const [date, setDate] = useState(sp.get("date") || "");
   const [orderIdInput, setOrderIdInput] = useState(sp.get("orderId") || "");
   const [orderOptions, setOrderOptions] = useState([]);
@@ -56,97 +105,49 @@ export default function OrderEggMatching() {
   const [order, setOrder] = useState(null);
   const [orderLoading, setOrderLoading] = useState(false);
 
-  const UNIT_SIZE = 30; // 발주/원란 매칭 기본 단위: 1판 = 30알(고정)
-  const [accOpen, setAccOpen] = useState(false);
-
-  // 발주가 없으면(선택/로드 실패 등) 대체가능 원란 영역을 닫습니다.
-  useEffect(() => {
-    if (!order?.id) setAccOpen(false);
-  }, [order?.id]);
-
-  // local match state
-  const [items, setItems] = useState([]); // [{eggLotId, trays, eggsPerTray}]
+  const [serverMatches, setServerMatches] = useState([]);
+  const [draftRows, setDraftRows] = useState([]);
+  const [saving, setSaving] = useState(false);
+  const [saveErr, setSaveErr] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
 
-  const customersById = useMemo(() => {
+  const customersByPk = useMemo(() => {
     const m = {};
     (customers || []).forEach((c) => {
-      if (c?.id != null) m[String(c.id)] = c;
+      const pk = toPk(c);
+      if (pk) m[pk] = c;
     });
     return m;
   }, [customers]);
 
-  const productsById = useMemo(() => {
+  const productsByPk = useMemo(() => {
     const m = {};
     (products || []).forEach((p) => {
-      if (p?.id != null) m[String(p.id)] = p;
+      const pk = toPk(p);
+      if (pk) m[pk] = p;
     });
     return m;
   }, [products]);
 
-  const eggLotsById = useMemo(() => {
-    const m = {};
-    (eggLots || []).forEach((l) => {
-      if (l?.id != null) m[String(l.id)] = l;
-    });
-    return m;
-  }, [eggLots]);
+  const selectedCustomer = useMemo(() => {
+    if (!order) return null;
+    return customersByPk[toPk(order?.customer)] || (typeof order?.customer === "object" ? order.customer : null);
+  }, [order, customersByPk]);
 
   const selectedProduct = useMemo(() => {
     if (!order) return null;
-    const pid = order?.product;
-    return productsById[String(pid)] || null;
-  }, [order, productsById]);
+    return productsByPk[toPk(order?.product)] || (typeof order?.product === "object" ? order.product : null);
+  }, [order, productsByPk]);
 
-  const requiredWeight = useMemo(() => {
-    // 발주 당시 난중(백엔드 확장 필드)이 있으면 그걸 우선, 없으면 제품 마스터 난중
-    const w = order?.product_egg_weight || selectedProduct?.egg_weight;
-    return w ? String(w) : "";
-  }, [order, selectedProduct]);
-
-  const requiredRank = useMemo(() => EGG_WEIGHT_RANK[requiredWeight] || 0, [requiredWeight]);
-
-  const eligibleLots = useMemo(() => {
-    // "해당 난중 이상"만
-    if (!requiredRank) return (eggLots || []).slice();
-    return (eggLots || [])
-      .filter((l) => {
-        const r = EGG_WEIGHT_RANK[String(l?.egg_weight || "")] || 0;
-        return r >= requiredRank;
-      })
-      .slice();
-  }, [eggLots, requiredRank]);
-
-  const baseLots = useMemo(() => {
-    if (!requiredWeight) return [];
-    return eligibleLots
-      .filter((l) => String(l?.egg_weight || "") === requiredWeight)
-      .sort((a, b) => (String(b?.receiving_date || "").localeCompare(String(a?.receiving_date || ""))));
-  }, [eligibleLots, requiredWeight]);
-
-  const substituteLots = useMemo(() => {
-    // 발주 선택 전에는 대체가능 원란 목록을 표시하지 않습니다.
-    if (!order?.id) return [];
-    // 기타 대체가능 원란: 기준 난중 제외 + 난중 작은 순(= 기준보다 큰 것들 중 가까운 것부터)
-    return eligibleLots
-      .filter((l) => String(l?.egg_weight || "") !== requiredWeight)
-      .sort((a, b) => {
-        const ra = EGG_WEIGHT_RANK[String(a?.egg_weight || "")] || 0;
-        const rb = EGG_WEIGHT_RANK[String(b?.egg_weight || "")] || 0;
-        if (ra !== rb) return ra - rb;
-        return String(b?.receiving_date || "").localeCompare(String(a?.receiving_date || ""));
-      });
-  }, [eligibleLots, requiredWeight, order?.id]);
-
-  const orderQtyTrays = useMemo(() => num(order?.confirmed_quantity ?? order?.quantity, 0), [order]);
-  const allocatedTrays = useMemo(
-    () => (items || []).reduce((s, it) => s + Math.max(0, num(it?.trays, 0)), 0),
-    [items]
+  const confirmedQty = useMemo(() => num(order?.quantity, 0), [order]);
+  const allocatedQty = useMemo(
+    () => draftRows.reduce((sum, row) => sum + Math.max(0, num(row?.quantity, 0)), 0),
+    [draftRows]
   );
   const progressPct = useMemo(() => {
-    if (!orderQtyTrays) return 0;
-    return Math.min(100, Math.round((allocatedTrays / orderQtyTrays) * 100));
-  }, [allocatedTrays, orderQtyTrays]);
+    if (!confirmedQty) return 0;
+    return Math.min(100, Math.round((allocatedQty / confirmedQty) * 100));
+  }, [allocatedQty, confirmedQty]);
 
   useEffect(() => {
     let alive = true;
@@ -172,16 +173,14 @@ export default function OrderEggMatching() {
     };
   }, []);
 
-  // 날짜별 발주 목록(선택용)
   useEffect(() => {
     let alive = true;
     (async () => {
+      if (!date) {
+        setOrderOptions([]);
+        return;
+      }
       try {
-        if (!date) {
-          if (!alive) return;
-          setOrderOptions([]);
-          return;
-        }
         const rows = await listOrders({ delivery_date: date });
         if (!alive) return;
         setOrderOptions(rows);
@@ -198,16 +197,23 @@ export default function OrderEggMatching() {
   async function loadOrderById(id) {
     if (!id) return;
     setOrderLoading(true);
+    setSaveErr("");
     setSaveMsg("");
     try {
-      const o = await getOrder(id);
-      setOrder(o);
+      const nextOrder = await getOrder(id);
+      const orderPk = getOrderPk(nextOrder);
+      const matches = await listOrderMatches(orderPk);
 
-      // local match restore
-      const saved = loadOrderMatch(id);
-      setItems(Array.isArray(saved?.items) ? saved.items : []);
+      setOrder(nextOrder);
+      setServerMatches(matches);
+      setDraftRows(
+        (matches || []).map((m) => ({
+          id: m?.id ?? null,
+          egg_lot: toPk(m?.egg_lot),
+          quantity: String(num(m?.quantity, 0)),
+        }))
+      );
 
-      // sync url
       const next = new URLSearchParams(sp);
       next.set("orderId", String(id));
       if (date) next.set("date", date);
@@ -215,7 +221,8 @@ export default function OrderEggMatching() {
     } catch (e) {
       setErr(getApiErrorMessage(e, "발주 정보를 불러오지 못했습니다."));
       setOrder(null);
-      setItems([]);
+      setServerMatches([]);
+      setDraftRows([]);
     } finally {
       setOrderLoading(false);
     }
@@ -227,84 +234,105 @@ export default function OrderEggMatching() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  function availTrays(lot) {
-    const q = num(lot?.quantity, 0);
-    if (q <= 0) return 0;
-    return Math.floor(q / UNIT_SIZE);
+  function addDraftRow() {
+    setDraftRows((prev) => [...prev, { id: null, egg_lot: "", quantity: "" }]);
   }
 
-  function getItem(eggLotId) {
-    return items.find((x) => String(x.eggLotId) === String(eggLotId));
+  function updateDraftRow(index, patch) {
+    setDraftRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
-  function upsertItem(eggLotId, trays) {
-    const t = Math.max(0, Math.floor(num(trays, 0)));
-    const id = String(eggLotId);
-    setItems((prev) => {
-      const next = prev.slice();
-      const idx = next.findIndex((x) => String(x.eggLotId) === id);
-      if (t === 0) {
-        if (idx >= 0) next.splice(idx, 1);
-        return next;
-      }
-      const payload = { eggLotId: Number(eggLotId), trays: t, eggsPerTray: UNIT_SIZE };
-      if (idx >= 0) next[idx] = payload;
-      else next.push(payload);
-      return next;
-    });
+  function removeDraftRow(index) {
+    setDraftRows((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function pickLot(lot) {
-    const lotId = lot?.id;
-    if (lotId == null) return;
-    const max = availTrays(lot);
-    if (max <= 0) return;
-    const exists = getItem(lotId);
-    if (exists) return;
-    // 배정 판 수는 우측 "배정 목록"에서 조절하므로, 추가 시 기본 1판으로 넣습니다.
-    upsertItem(lotId, 1);
+  function validateRows() {
+    if (!order?.id) return "발주를 먼저 선택해주세요.";
+    if (!confirmedQty || confirmedQty <= 0) return "생산수량확정(확정수량) 이후에 원란매칭을 진행할 수 있습니다.";
+
+    const usedLotSet = new Set();
+    for (const row of draftRows) {
+      const lotPk = String(row?.egg_lot || "").trim();
+      const quantity = num(row?.quantity, NaN);
+      if (!lotPk) return "모든 매칭 행에서 원란 로트를 선택해주세요.";
+      if (!Number.isFinite(quantity) || quantity <= 0) return "매칭 수량은 1 이상의 숫자여야 합니다.";
+      if (usedLotSet.has(lotPk)) return "같은 원란 로트를 중복으로 선택할 수 없습니다.";
+      usedLotSet.add(lotPk);
+    }
+
+    if (allocatedQty !== confirmedQty) {
+      return `매칭수량(${fmt(allocatedQty)})과 확정수량(${fmt(confirmedQty)})이 같아야 합니다.`;
+    }
+
+    return "";
   }
 
   async function onSave() {
-    if (!order?.id) return;
-    const payload = {
-      eggsPerTray: UNIT_SIZE,
-      items,
-      updatedAt: new Date().toISOString(),
-    };
-    saveOrderMatch(order.id, payload);
-    const msg = '저장했습니다. 발주 목록에서 "원란확인"으로 표시됩니다.';
-    setSaveMsg(msg);
-    // 저장 직후 페이지 이동으로 인해 메시지가 보이지 않는 문제가 있어 알림을 띄웁니다.
-    window.alert(msg);
+    if (saving) return;
+    setSaveErr("");
+    setSaveMsg("");
 
-    // 요구: 저장 후 발주 페이지로 이동
-    const qs = new URLSearchParams();
-    if (date) qs.set("date", date);
-    nav(`/purchase?${qs.toString()}`);
+    const validationError = validateRows();
+    if (validationError) {
+      setSaveErr(validationError);
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const orderPk = getOrderPk(order);
+      const nextRows = draftRows.map((row) => ({
+        id: row?.id ?? null,
+        egg_lot: Number(row.egg_lot),
+        quantity: Number(row.quantity),
+      }));
+
+      const serverById = new Map((serverMatches || []).map((m) => [String(m.id), m]));
+      const keptIds = new Set();
+
+      for (const row of nextRows) {
+        if (row.id != null && serverById.has(String(row.id))) {
+          keptIds.add(String(row.id));
+          const prev = serverById.get(String(row.id));
+          if (Number(prev?.egg_lot) !== row.egg_lot || Number(prev?.quantity) !== row.quantity) {
+            await patchMatchingEgg(row.id, {
+              order: Number(orderPk),
+              egg_lot: row.egg_lot,
+              quantity: row.quantity,
+            });
+          }
+          continue;
+        }
+
+        const created = await createMatchingEgg({
+          order: Number(orderPk),
+          egg_lot: row.egg_lot,
+          quantity: row.quantity,
+        });
+        if (created?.id != null) keptIds.add(String(created.id));
+      }
+
+      for (const prev of serverMatches || []) {
+        const prevId = String(prev?.id ?? "");
+        if (!prevId) continue;
+        if (keptIds.has(prevId)) continue;
+        await deleteMatchingEgg(prev.id);
+      }
+
+      await loadOrderById(orderPk);
+      setSaveMsg("저장되었습니다. 발주 목록에서 원란매칭 완료 상태로 표시됩니다.");
+    } catch (e) {
+      setSaveErr(getApiErrorMessage(e, "원란매칭 저장에 실패했습니다."));
+    } finally {
+      setSaving(false);
+    }
   }
-
-  const customerName = useMemo(() => {
-    const c = customersById[String(order?.customer ?? "")];
-    return c?.customer_name || c?.name || "";
-  }, [order, customersById]);
-
-  const productName = useMemo(() => {
-    const p = selectedProduct;
-    if (!p) return "";
-    const name = p?.product_name || p?.name || "";
-    return name ? `${name}(${p?.id ?? "-"})` : "";
-  }, [selectedProduct]);
-
-  // (orderQtyTrays / allocatedTrays) 는 useMemo로 계산
 
   if (loading) {
     return (
       <div className="page-card">
         <h2 className="page-title">원란 매칭</h2>
-        <div className="muted" style={{ marginTop: "var(--sp-12)" }}>
-          불러오는 중...
-        </div>
+        <div className="muted" style={{ marginTop: "var(--sp-12)" }}>불러오는 중..</div>
       </div>
     );
   }
@@ -315,28 +343,29 @@ export default function OrderEggMatching() {
         <div>
           <h2 className="page-title" style={{ margin: 0 }}>원란 매칭</h2>
           <div className="sub" style={{ marginTop: "var(--sp-8)" }}>
-            발주번호를 선택/입력한 뒤, 기준 난중 원란과 대체가능 원란에서 배정합니다.
+            확정수량과 원란 매칭수량이 정확히 같아야 저장할 수 있습니다.
           </div>
         </div>
       </div>
 
-      {err && (
-        <div className="field-error" style={{ whiteSpace: "pre-wrap" }}>{err}</div>
-      )}
+      {err && <div className="field-error" style={{ whiteSpace: "pre-wrap" }}>{err}</div>}
 
-      {/* Remote */}
       <div className="purchase-remote">
         <div className="remote-grid">
           <div className="field">
-            <label>날짜</label>
-            <input type="date" value={date} onChange={(e) => {
-              const v = e.target.value;
-              setDate(v);
-              const next = new URLSearchParams(sp);
-              if (v) next.set("date", v);
-              else next.delete("date");
-              setSp(next, { replace: true });
-            }} />
+            <label>출고일자</label>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                const v = e.target.value;
+                setDate(v);
+                const next = new URLSearchParams(sp);
+                if (v) next.set("date", v);
+                else next.delete("date");
+                setSp(next, { replace: true });
+              }}
+            />
           </div>
 
           <div className="field remote-span-2">
@@ -345,23 +374,23 @@ export default function OrderEggMatching() {
               value={order?.id ? String(order.id) : ""}
               onChange={(e) => {
                 const v = e.target.value;
-                if (v) {
-                  setOrderIdInput(String(v));
-                  loadOrderById(v);
-                }
+                if (!v) return;
+                setOrderIdInput(v);
+                loadOrderById(v);
               }}
             >
               <option value="">선택</option>
               {orderOptions.map((o) => {
-                const cid = String(o?.customer ?? "");
-                const pid = String(o?.product ?? "");
-                const c = customersById[cid]?.customer_name || "고객사";
-                const p0 = productsById[pid]?.product_name || "제품";
-                const p = `${p0}(${pid || "-"})`;
-                const q = num(o?.confirmed_quantity ?? o?.quantity, 0);
+                const customer =
+                  customersByPk[toPk(o?.customer)] ||
+                  (typeof o?.customer === "object" ? o.customer : null);
+                const product =
+                  productsByPk[toPk(o?.product)] ||
+                  (typeof o?.product === "object" ? o.product : null);
+
                 return (
-                  <option key={o.id} value={o.id}>
-                    {o.id} / {c} / {p} / {q}판
+                  <option key={toPk(o) || getOrderLabel(o)} value={toPk(o)}>
+                    {getOrderLabel(o)} / {getCustomerLabel(customer)} / {getProductLabel(product)} / 확정:{fmt(o?.quantity)}
                   </option>
                 );
               })}
@@ -381,256 +410,203 @@ export default function OrderEggMatching() {
                 type="button"
                 className="btn secondary"
                 onClick={() => {
-                  if (!orderIdInput.trim()) return;
-                  loadOrderById(orderIdInput.trim());
+                  const v = orderIdInput.trim();
+                  if (!v) return;
+                  loadOrderById(v);
                 }}
                 disabled={orderLoading}
               >
                 불러오기
               </button>
-              <button
-                type="button"
-                className="btn"
-                onClick={onSave}
-                disabled={!order?.id || orderLoading}
-              >
-                저장
-              </button>
             </div>
           </div>
         </div>
-
-        {saveMsg && <div className="field-help" style={{ whiteSpace: "pre-wrap" }}>{saveMsg}</div>}
       </div>
 
-      {/* Order Summary */}
       <div className="summary-kpi">
         <div className="kpi">
-          <div className="k">발주</div>
-          <div className="v">{order?.id ?? "-"}</div>
-          <div className="muted" style={{ marginTop: "var(--sp-6)" }}>출고일자: {ymd(order?.delivery_date) || "-"}</div>
+          <div className="k">발주번호</div>
+          <div className="v">{order ? getOrderLabel(order) : "-"}</div>
+          <div className="muted" style={{ marginTop: "var(--sp-6)" }}>
+            출고일자: {ymd(order?.delivery_date) || "-"}
+          </div>
         </div>
+
         <div className="kpi">
           <div className="k">고객사 / 제품</div>
-          <div className="v" style={{ fontSize: "var(--fs-14)" }}>{customerName || "-"}</div>
-          <div className="muted" style={{ marginTop: "var(--sp-6)" }}>{productName || "-"}</div>
+          <div className="v" style={{ fontSize: "var(--fs-14)" }}>{getCustomerLabel(selectedCustomer)}</div>
+          <div className="muted" style={{ marginTop: "var(--sp-6)" }}>{getProductLabel(selectedProduct)}</div>
         </div>
+
         <div className="kpi">
-          <div className="k">배정</div>
-          <div className="v">{fmt(allocatedTrays)}판</div>
-          <div className="muted" style={{ marginTop: "var(--sp-6)" }}>발주 수량: {fmt(orderQtyTrays)}판</div>
+          <div className="k">매칭 진행</div>
+          <div className="v">{fmt(allocatedQty)}</div>
+          <div className="muted" style={{ marginTop: "var(--sp-6)" }}>
+            확정수량: {fmt(confirmedQty)}
+          </div>
         </div>
       </div>
 
       <div>
-        <div className="field-row" style={{ justifyContent: "space-between" }}>
-          <div className="field-help">
-            기본 단위: 1판 = 30알 (고정)
-          </div>
-        </div>
-
         <div className="progress" style={{ marginTop: "var(--sp-10)" }}>
           <div style={{ width: `${progressPct}%` }} />
         </div>
-        <div className="muted" style={{ marginTop: "var(--sp-8)" }}>진행률: {progressPct}%</div>
+        <div className="muted" style={{ marginTop: "var(--sp-8)" }}>
+          진행률 {progressPct}% ({fmt(allocatedQty)} / {fmt(confirmedQty)})
+        </div>
       </div>
 
+      {saveErr && <div className="field-error" style={{ whiteSpace: "pre-wrap" }}>{saveErr}</div>}
+      {saveMsg && <div className="field-help" style={{ whiteSpace: "pre-wrap" }}>{saveMsg}</div>}
+
       <div className="match-grid">
-        {/* Left: Lots */}
-        <div style={{ display: "grid", gap: "var(--sp-16)" }}>
-          <div className="scroll-box">
-            <div className="scroll-head">
-              <div style={{ fontWeight: 900 }}>기준 난중 원란</div>
-              <div className="muted">{requiredWeight ? `기준 난중: ${requiredWeight}` : "제품 난중이 없습니다."}</div>
-            </div>
-            <div className="scroll-body">
-              <LotTable
-                rows={baseLots}
-                availTrays={availTrays}
-                  onToggle={(lot, checked) => {
-                    if (checked) pickLot(lot);
-                    else upsertItem(lot?.id, 0);
-                  }}
-                selectedIds={new Set(items.map((x) => String(x.eggLotId)))}
-              />
-            </div>
-          </div>
-
-          <div className="accordion">
-            <div
-              className={`acc-head ${order?.id ? "" : "disabled"}`}
-              onClick={order?.id ? () => setAccOpen((v) => !v) : undefined}
-              aria-disabled={!order?.id}
-              title={!order?.id ? "발주를 먼저 선택해주세요." : ""}
-            >
-              <div className="acc-title">기타 대체가능 원란</div>
-              <div className="muted" style={{ fontWeight: 900 }}>{accOpen ? "▾" : "▸"}</div>
-            </div>
-            {accOpen && (
-              <div className="acc-body">
-                <div className="scroll-box" style={{ border: 0, borderTop: "1px solid var(--color-border-soft)", borderRadius: 0 }}>
-                  <div className="scroll-head">
-                    <div className="muted">기준 난중 이상 / 오름차순</div>
-                  </div>
-                  <div className="scroll-body">
-                    <LotTable
-                      rows={substituteLots}
-                      availTrays={availTrays}
-                      onToggle={(lot, checked) => {
-                        if (checked) pickLot(lot);
-                        else upsertItem(lot?.id, 0);
-                      }}
-                      selectedIds={new Set(items.map((x) => String(x.eggLotId)))}
-                      showWeight
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Right: Assigned */}
-        <div className="scroll-box" style={{ position: "sticky", top: "var(--sp-18)", alignSelf: "start" }}>
+        <div className="scroll-box">
           <div className="scroll-head">
-            <div style={{ fontWeight: 900 }}>배정 목록</div>
-            <button
-              className="btn secondary small"
-              onClick={() => {
-                const ok = window.confirm("배정 목록을 비울까요?");
-                if (!ok) return;
-                setItems([]);
-              }}
-              disabled={items.length === 0}
-            >
-              전체 해제
-            </button>
+            <div style={{ fontWeight: 900 }}>원란 재고</div>
+            <div className="muted">식별자: Egglot_no / egg_lot_id</div>
           </div>
-          <div className="scroll-body" style={{ maxHeight: "clamp(320px, calc(520 * var(--ui, 1)), 620px)" }}>
+          <div className="scroll-body">
             <div className="purchase-table-wrap">
-              <table className="data-table" style={{ width: "100%", tableLayout: "fixed" }}>
-                <colgroup>
-                  <col style={{ width: "16%" }} />
-                  <col style={{ width: "14%" }} />
-                  <col style={{ width: "16%" }} />
-                  <col style={{ width: "54%" }} />
-                </colgroup>
+              <table className="data-table">
                 <thead>
                   <tr>
-                    <th>재고ID</th>
-                    <th>난중</th>
-                    <th>가능(판)</th>
-                    <th>배정(판)</th>
+                    <th>원란식별자</th>
+                    <th>농장식별자</th>
+                    <th>입고일</th>
+                    <th>농장유형</th>
+                    <th>재고량</th>
+                    <th>추가</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {items.length === 0 ? (
+                  {!eggLots.length ? (
                     <tr>
-                      <td colSpan={4} className="muted">배정된 원란이 없습니다.</td>
+                      <td colSpan={6} className="muted">원란 재고가 없습니다.</td>
                     </tr>
                   ) : (
-                    items
-                      .slice()
-                      .sort((a, b) => String(a.eggLotId).localeCompare(String(b.eggLotId)))
-                      .map((it) => {
-                        const lot = eggLotsById[String(it.eggLotId)];
-                        const max = lot ? availTrays(lot) : 0;
-                        const trays = num(it.trays, 0);
-                        return (
-                          <tr key={it.eggLotId}>
-                            <td>{it.eggLotId}</td>
-                            <td>{lot?.egg_weight || "-"}</td>
-                            <td>{fmt(max)}</td>
-                            <td>
-                              <div className="assign-cell">
-                                <input
-                                  type="number"
-                                  value={String(trays)}
-                                  min={0}
-                                  step={1}
-                                  onChange={(e) => {
-                                    const v = num(e.target.value, 0);
-                                    if (max > 0 && v > max) return;
-                                    upsertItem(it.eggLotId, v);
-                                  }}
-                                />
-                                <button className="btn danger small" onClick={() => upsertItem(it.eggLotId, 0)}>삭제</button>
-                              </div>
-                              <div className="field-help">1판 = 30알</div>
-                            </td>
-                          </tr>
-                        );
-                      })
+                    eggLots.map((lot) => {
+                      const lotPk = getLotPk(lot);
+                      const lotKey = lotPk == null ? getLotLabel(lot) : String(lotPk);
+                      const already = draftRows.some((row) => String(row?.egg_lot) === String(lotPk));
+                      const farmId =
+                        typeof lot?.farm === "object"
+                          ? getIdentifierLabel(lot.farm, ["farm_id"], ["id"])
+                          : asText(lot?.farm);
+
+                      return (
+                        <tr key={lotKey}>
+                          <td>{getIdentifierLabel(lot, ["Egglot_no", "egg_lot_id"], ["id"])}</td>
+                          <td>{farmId || "-"}</td>
+                          <td>{ymd(lot?.receiving_date) || "-"}</td>
+                          <td>{normalizeFarmType(lot?.farm_type) || "-"}</td>
+                          <td>{fmt(lot?.quantity)}</td>
+                          <td>
+                            <button
+                              className="btn secondary small"
+                              type="button"
+                              disabled={already}
+                              onClick={() => {
+                                setDraftRows((prev) => [
+                                  ...prev,
+                                  { id: null, egg_lot: String(lotPk), quantity: "0" },
+                                ]);
+                              }}
+                            >
+                              {already ? "추가됨" : "추가"}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
             </div>
           </div>
+        </div>
+
+        <div className="scroll-box" style={{ position: "sticky", top: "var(--sp-18)", alignSelf: "start" }}>
+          <div className="scroll-head">
+            <div style={{ fontWeight: 900 }}>매칭 목록</div>
+            <div className="row-actions">
+              <button className="btn secondary small" type="button" onClick={addDraftRow}>
+                행 추가
+              </button>
+              <button className="btn secondary small" type="button" onClick={() => setDraftRows([])}>
+                전체 비우기
+              </button>
+            </div>
+          </div>
+
+          <div className="scroll-body">
+            <div className="purchase-table-wrap">
+              <table className="data-table">
+                <thead>
+                  <tr>
+                    <th>원란식별자</th>
+                    <th>매칭수량</th>
+                    <th>삭제</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {!draftRows.length ? (
+                    <tr><td colSpan={3} className="muted">매칭 행이 없습니다.</td></tr>
+                  ) : (
+                    draftRows.map((row, index) => (
+                      <tr key={`${row?.id ?? "new"}-${index}`}>
+                        <td>
+                          <select
+                            value={row?.egg_lot || ""}
+                            onChange={(e) => updateDraftRow(index, { egg_lot: e.target.value })}
+                          >
+                            <option value="">선택</option>
+                            {eggLots.map((lot) => {
+                              const lotPk = getLotPk(lot);
+                              const lotPkText = lotPk == null ? "" : String(lotPk);
+                              return (
+                                <option key={lotPkText || getLotLabel(lot)} value={lotPkText}>
+                                  {getLotLabel(lot)}
+                                </option>
+                              );
+                            })}
+                          </select>
+                        </td>
+                        <td>
+                          <input
+                            type="number"
+                            min={0}
+                            step={1}
+                            value={row?.quantity ?? ""}
+                            onChange={(e) => updateDraftRow(index, { quantity: e.target.value })}
+                          />
+                        </td>
+                        <td>
+                          <button
+                            className="btn danger small"
+                            type="button"
+                            onClick={() => removeDraftRow(index)}
+                          >
+                            삭제
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="modal-foot" style={{ borderTop: "1px solid var(--color-border-soft)" }}>
+            <button className="btn secondary" type="button" onClick={() => nav(`/purchase?date=${date || ""}`)}>
+              발주목록
+            </button>
+            <button className="btn" type="button" onClick={onSave} disabled={saving || !order?.id}>
+              {saving ? "저장중.." : "저장"}
+            </button>
           </div>
         </div>
       </div>
-    </div>
-  );
-}
-
-function LotTable({ rows, availTrays, onToggle, onPick, selectedIds, showWeight = false }) {
-
-  // backward compat: older prop name(onPick)
-  const toggle = onToggle || onPick;
-
-  if (!rows || rows.length === 0) {
-    return (
-      <div className="muted" style={{ padding: "var(--sp-12)" }}>
-        표시할 원란 재고가 없습니다.
-      </div>
-    );
-  }
-
-  return (
-    <div className="purchase-table-wrap">
-      <table className="data-table" style={{ minWidth: showWeight ? "860px" : "780px" }}>
-        <thead>
-          <tr>
-            <th>재고ID</th>
-            {showWeight && <th>난중</th>}
-            <th>농장</th>
-            <th>산란일</th>
-            <th>위치</th>
-            <th>수량(알)</th>
-            <th>가능(판)</th>
-            <th>선택</th>
-          </tr>
-        </thead>
-        <tbody>
-          {(rows || []).map((r) => {
-            const id = r?.id;
-            const max = availTrays(r);
-            const selected = selectedIds?.has(String(id));
-            return (
-              <tr key={id}>
-                <td>{id}</td>
-                {showWeight && <td>{r?.egg_weight || "-"}</td>}
-                <td>{typeof r?.farm === "object" ? (r.farm?.farm_name || r.farm?.name || "-") : (r?.farm || "-")}</td>
-                <td>{ymd(r?.laying_date) || "-"}</td>
-                <td>{r?.location || "-"}</td>
-                <td>{fmt(r?.quantity)}</td>
-                <td>{fmt(max)}판</td>
-                <td>
-                  <span className="lot-check">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(selected)}
-                      disabled={max <= 0}
-                      onChange={(e) => toggle(r, e.target.checked)}
-                    />
-                  </span>
-                </td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </table>
     </div>
   );
 }

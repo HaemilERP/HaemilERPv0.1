@@ -3,10 +3,21 @@ import "../accounting/AccountingTable.css";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../../context/AuthContext";
-import { deleteUser, listEmployees, updateUserPassword } from "../../services/userApi";
+import {
+  deleteUser,
+  getMyAccount,
+  listEmployees,
+  updateUserPassword,
+} from "../../services/userApi";
 import { getApiErrorMessage } from "../../utils/helpers";
 import Pagination from "../../components/common/Pagination";
 import SearchBar from "../../components/common/SearchBar";
+
+function isSameUser(a, b) {
+  if (!a || !b) return false;
+  if (a.id != null && b.id != null) return Number(a.id) === Number(b.id);
+  return String(a.username || "").trim() === String(b.username || "").trim();
+}
 
 export default function Employees() {
   const { user, authLoading } = useAuth();
@@ -17,6 +28,7 @@ export default function Employees() {
   const [rows, setRows] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
   const [modalOpen, setModalOpen] = useState(false);
   const [editingRow, setEditingRow] = useState(null);
   const [pw1, setPw1] = useState("");
@@ -24,12 +36,10 @@ export default function Employees() {
   const [modalError, setModalError] = useState("");
   const [saving, setSaving] = useState(false);
 
-  const [field, setField] = useState("ALL"); // ALL | USERNAME | ROLE
+  const [field, setField] = useState("ALL");
   const [q, setQ] = useState("");
-
   const [sort, setSort] = useState({ key: "id", dir: "asc" });
 
-  // Pagination
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
@@ -37,17 +47,23 @@ export default function Employees() {
     setLoading(true);
     setError("");
     try {
-      const data = await listEmployees(); // ✅ accounts/accounts GET
-      setRows(Array.isArray(data) ? data : []);
+      if (isAdmin) {
+        const data = await listEmployees();
+        setRows(Array.isArray(data) ? data : []);
+      } else {
+        const me = await getMyAccount();
+        setRows(me ? [me] : []);
+      }
     } catch (e) {
-      setError(getApiErrorMessage(e, "목록 조회 실패"));
+      setError(getApiErrorMessage(e, "직원 목록 조회 실패"));
+      setRows([]);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [isAdmin]);
 
   useEffect(() => {
-    fetchRows(); // 최초 1회 로드
+    fetchRows();
   }, [fetchRows]);
 
   const filtered = useMemo(() => {
@@ -61,7 +77,6 @@ export default function Employees() {
 
       if (field === "USERNAME") return username.includes(keyword);
       if (field === "ROLE") return role.includes(keyword);
-
       return idStr.includes(keyword) || username.includes(keyword) || role.includes(keyword);
     });
   }, [rows, q, field]);
@@ -69,34 +84,26 @@ export default function Employees() {
   const sorted = useMemo(() => {
     const { key, dir } = sort;
     const sign = dir === "asc" ? 1 : -1;
-
     const getVal = (r) => {
       if (key === "id") return Number(r?.id ?? 0);
       if (key === "username") return String(r?.username ?? "");
       if (key === "role") return String(r?.role ?? "");
       return "";
     };
-
     return [...filtered].sort((a, b) => {
       const av = getVal(a);
       const bv = getVal(b);
-
       if (typeof av === "number" && typeof bv === "number") return (av - bv) * sign;
       return String(av).localeCompare(String(bv)) * sign;
     });
   }, [filtered, sort]);
 
-  // 필터/검색/정렬이 바뀌면 첫 페이지로
   useEffect(() => {
     setPage(1);
   }, [q, field, sort.key, sort.dir]);
 
-  const pageCount = useMemo(() => {
-    return Math.max(1, Math.ceil(sorted.length / pageSize));
-  }, [sorted.length]);
-
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(sorted.length / pageSize)), [sorted.length]);
   useEffect(() => {
-    // 데이터가 줄어들어 현재 페이지가 범위를 벗어나면 보정
     setPage((p) => Math.min(Math.max(1, p), pageCount));
   }, [pageCount]);
 
@@ -112,10 +119,12 @@ export default function Employees() {
     });
   };
 
-  const onClickEdit = (row) => {
-    const canEdit = isAdmin || (user?.id != null && row?.id === user.id);
-    if (!canEdit) return;
+  const isSelf = (row) => isSameUser(row, user);
+  const canEditRow = (row) => isAdmin || isSelf(row);
+  const canDeleteRow = (row) => (isAdmin ? !isSelf(row) : isSelf(row));
 
+  const onClickEdit = (row) => {
+    if (!canEditRow(row)) return;
     setEditingRow(row || null);
     setPw1("");
     setPw2("");
@@ -144,15 +153,14 @@ export default function Employees() {
   const onSubmitModal = async (e) => {
     e.preventDefault();
     if (!editingRow?.id) return;
-
     setModalError("");
 
-    const nextPw = (pw1 || "").trim();
+    const nextPw = String(pw1 || "").trim();
     if (!nextPw || nextPw.length < 8) {
       setModalError("비밀번호는 최소 8자 이상이어야 합니다.");
       return;
     }
-    if (nextPw !== pw2) {
+    if (nextPw !== String(pw2 || "").trim()) {
       setModalError("비밀번호 확인이 일치하지 않습니다.");
       return;
     }
@@ -161,53 +169,27 @@ export default function Employees() {
     try {
       await updateUserPassword(editingRow.id, nextPw);
       await fetchRows();
-      setModalOpen(false);
-      setEditingRow(null);
-      setPw1("");
-      setPw2("");
+      closeModal();
     } catch (e2) {
-      setModalError(getApiErrorMessage(e2));
+      setModalError(getApiErrorMessage(e2, "비밀번호 변경 실패"));
     } finally {
       setSaving(false);
     }
   };
 
-  // ✅ 삭제 버튼 UX 개선: title/disabled 로직을 읽기 쉽게 분리
-  const getDeleteMeta = (row) => {
-    if (!isAdmin) {
-      return { disabled: true, title: "삭제는 관리자만 가능합니다." };
-    }
-    if (user?.id === row?.id) {
-      return { disabled: true, title: "관리자는 본인 계정을 삭제할 수 없습니다." };
-    }
-    return { disabled: false, title: "" };
-  };
-
-  const onDelete = async (id, username) => {
-    // 방어 (UI에서 막혀도 혹시 모를 호출 대비)
-    if (!isAdmin) return;
-    if (user?.id === id) return;
-
-    const ok = window.confirm(`정말로 '${username}' 계정을 삭제할까요?`);
+  const onDelete = async (row) => {
+    if (!row?.id || !canDeleteRow(row)) return;
+    const ok = window.confirm(`정말로 '${row?.username ?? ""}' 계정을 삭제할까요?`);
     if (!ok) return;
 
     try {
-      await deleteUser(id);
-      setRows((prev) => prev.filter((r) => r?.id !== id));
-      // ✅ 서버 기준으로 다시 동기화하고 싶으면 아래로 교체
-      // await fetchRows();
+      await deleteUser(row.id);
+      setRows((prev) => prev.filter((r) => !isSameUser(r, row)));
     } catch (e) {
-      alert(getApiErrorMessage(e, "삭제 실패"));
+      window.alert(getApiErrorMessage(e, "계정 삭제 실패"));
     }
   };
 
-  const canEditRow = (row) => isAdmin || (user?.id != null && row?.id === user.id);
-
-  // --- UI 스타일(기존 유지) ---
-  // Employees 페이지는 기존 UI/기능을 유지하되,
-  // 버튼/폼 컨트롤은 전역(.btn/.filter-*) 스타일로 통일합니다.
-
-  // ✅ 검색 클릭/엔터 시마다 서버에서 다시 목록 갱신
   const onSearch = async () => {
     await fetchRows();
   };
@@ -225,7 +207,6 @@ export default function Employees() {
     <div className="page-card">
       <h2 style={{ margin: 0 }}>직원 목록</h2>
 
-      {/* 상단 검색/추가 */}
       <div
         style={{
           marginTop: "var(--sp-16)",
@@ -236,19 +217,16 @@ export default function Employees() {
           flexWrap: "wrap",
         }}
       >
-        <div style={{ display: "flex", gap: "var(--sp-10)", alignItems: "center", flexWrap: "wrap" }}>
-          {/* 고객사정보 페이지와 동일하게: 검색 중엔 버튼 disabled */}
-          <SearchBar
-            field={field}
-            setField={setField}
-            text={q}
-            setText={setQ}
-            fields={SEARCH_FIELDS}
-            loading={loading}
-            onSearch={onSearch}
-            inputWidth="var(--w-330)"
-          />
-        </div>
+        <SearchBar
+          field={field}
+          setField={setField}
+          text={q}
+          setText={setQ}
+          fields={SEARCH_FIELDS}
+          loading={loading}
+          onSearch={onSearch}
+          inputWidth="var(--w-330)"
+        />
 
         {isAdmin && (
           <button
@@ -257,16 +235,22 @@ export default function Employees() {
             disabled={authLoading}
             className="btn secondary"
           >
-            + 데이터 추가
+            + 계정 추가
           </button>
         )}
       </div>
 
-      {/* 상태 */}
-      {error && <div style={{ marginTop: "var(--sp-12)", color: "#ef4444", fontSize: "var(--fs-13)" }}>{error}</div>}
-      {loading && <div style={{ marginTop: "var(--sp-12)", color: "#64748b", fontSize: "var(--fs-13)" }}>불러오는 중...</div>}
+      {error && (
+        <div style={{ marginTop: "var(--sp-12)", color: "#ef4444", fontSize: "var(--fs-13)" }}>
+          {error}
+        </div>
+      )}
+      {loading && (
+        <div style={{ marginTop: "var(--sp-12)", color: "#64748b", fontSize: "var(--fs-13)" }}>
+          불러오는 중..
+        </div>
+      )}
 
-      {/* 테이블 */}
       <div
         style={{
           marginTop: "var(--sp-16)",
@@ -283,89 +267,82 @@ export default function Employees() {
                 onClick={() => toggleSort("id")}
                 style={{ textAlign: "left", padding: "var(--sp-14) var(--sp-16)", cursor: "pointer", fontWeight: 700 }}
               >
-                번호 <span style={{ opacity: 0.5, fontSize: "var(--fs-12)" }}>▲▼</span>
+                번호
               </th>
               <th
                 onClick={() => toggleSort("username")}
                 style={{ textAlign: "left", padding: "var(--sp-14) var(--sp-16)", cursor: "pointer", fontWeight: 700 }}
               >
-                아이디 <span style={{ opacity: 0.5, fontSize: "var(--fs-12)" }}>▲▼</span>
+                아이디
               </th>
               <th
                 onClick={() => toggleSort("role")}
                 style={{ textAlign: "left", padding: "var(--sp-14) var(--sp-16)", cursor: "pointer", fontWeight: 700 }}
               >
-                권한 <span style={{ opacity: 0.5, fontSize: "var(--fs-12)" }}>▲▼</span>
+                권한
               </th>
               <th style={{ textAlign: "center" }}>관리</th>
             </tr>
           </thead>
 
           <tbody>
-            {sorted.length === 0 && !loading ? (
+            {!loading && sorted.length === 0 ? (
               <tr>
-                    <td colSpan={4} style={{ padding: "var(--sp-18)", color: "#64748b" }}>
+                <td colSpan={4} style={{ padding: "var(--sp-18)", color: "#64748b" }}>
                   검색 결과가 없습니다.
                 </td>
               </tr>
             ) : (
-              pagedRows.map((r) => {
-                const canEdit = canEditRow(r);
-                const del = getDeleteMeta(r);
+              pagedRows.map((r) => (
+                <tr key={r?.id ?? r?.username} style={{ borderTop: "1px solid #eef2f7" }}>
+                  <td
+                    style={{
+                      padding: "var(--sp-18) var(--sp-16)",
+                      borderTop: "1px solid #eef2f7",
+                      fontWeight: 700,
+                      textAlign: "left",
+                    }}
+                  >
+                    {r?.id ?? "-"}
+                  </td>
 
-                return (
-                  <tr key={r?.id} style={{ borderTop: "1px solid #eef2f7" }}>
-                    <td
-                      style={{
-                        padding: "var(--sp-18) var(--sp-16)",
-                        borderTop: "1px solid #eef2f7",
-                        fontWeight: 700,
-                        textAlign: "left",
-                      }}
-                    >
-                      {r?.id}
-                    </td>
+                  <td style={{ padding: "var(--sp-18) var(--sp-16)", borderTop: "1px solid #eef2f7" }}>
+                    {r?.username ?? "-"}
+                  </td>
 
-                    <td style={{ padding: "var(--sp-18) var(--sp-16)", borderTop: "1px solid #eef2f7" }}>
-                      {r?.username ?? "-"}
-                    </td>
+                  <td style={{ padding: "var(--sp-18) var(--sp-16)", borderTop: "1px solid #eef2f7" }}>
+                    {r?.role ?? "-"}
+                  </td>
 
-                    <td style={{ padding: "var(--sp-18) var(--sp-16)", borderTop: "1px solid #eef2f7" }}>
-                      {r?.role ?? "-"}
-                    </td>
+                  <td style={{ textAlign: "center" }}>
+                    <div className="row-actions" style={{ justifyContent: "center" }}>
+                      <button
+                        type="button"
+                        disabled={!canEditRow(r)}
+                        onClick={() => onClickEdit(r)}
+                        className="btn small secondary"
+                      >
+                        수정
+                      </button>
 
-                    <td style={{ textAlign: "center" }}>
-                      <div className="row-actions" style={{ justifyContent: "center" }}>
-                        <button
-                          type="button"
-                          disabled={!canEdit}
-                          onClick={() => onClickEdit(r)}
-                          className="btn small secondary"
-                          title={!canEdit ? "본인 비밀번호만 변경 가능합니다." : ""}
-                        >
-                          수정
-                        </button>
-
-                        <button
-                          type="button"
-                          disabled={del.disabled}
-                          onClick={() => onDelete(r?.id, r?.username)}
-                          className="btn small danger"
-                          title={del.title}
-                        >
-                          삭제
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })
+                      <button
+                        type="button"
+                        disabled={!canDeleteRow(r)}
+                        onClick={() => onDelete(r)}
+                        className="btn small danger"
+                        title={!canDeleteRow(r) ? "삭제 권한이 없습니다." : ""}
+                      >
+                        삭제
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
             )}
           </tbody>
         </table>
       </div>
 
-      {/* ✅ 페이지네이션 */}
       <Pagination page={page} pageCount={pageCount} onChange={setPage} />
 
       {modalOpen && (
@@ -373,18 +350,19 @@ export default function Employees() {
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <form onSubmit={onSubmitModal}>
               <div className="modal-head">
-                <h3 className="modal-title">직원 편집</h3>
-                <button className="btn secondary small" type="button" onClick={closeModal} disabled={saving}>
-                  닫기
-                </button>
+                <h3 className="modal-title">비밀번호 수정</h3>
               </div>
 
               <div className="modal-body">
-                {modalError && <div className="field-error" style={{ marginBottom: "var(--sp-10)" }}>{modalError}</div>}
+                {modalError && (
+                  <div className="field-error" style={{ marginBottom: "var(--sp-10)" }}>
+                    {modalError}
+                  </div>
+                )}
 
                 <div className="modal-grid one">
                   <div className="field">
-                    <div className="filter-label">ID</div>
+                    <div className="filter-label">아이디</div>
                     <input className="filter-input" value={editingRow?.username || ""} readOnly />
                   </div>
 
@@ -422,7 +400,7 @@ export default function Employees() {
                   취소
                 </button>
                 <button className="btn" type="submit" disabled={saving || authLoading}>
-                  {saving ? "저장 중..." : "저장"}
+                  {saving ? "저장중.." : "저장"}
                 </button>
               </div>
             </form>

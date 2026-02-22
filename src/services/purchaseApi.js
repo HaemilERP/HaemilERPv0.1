@@ -44,3 +44,29 @@ export async function getOrderHistory(id) {
   const res = await api.get(`/orders/histories/${id}/`);
   return res.data;
 }
+
+// Matching eggs
+export async function listMatchingEggs(params = {}) {
+  const res = await api.get("/orders/matching-eggs/", { params });
+  return asList(res.data);
+}
+
+export async function getMatchingEgg(id) {
+  const res = await api.get(`/orders/matching-eggs/${id}/`);
+  return res.data;
+}
+
+export async function createMatchingEgg(payload) {
+  const res = await api.post("/orders/matching-eggs/", payload);
+  return res.data;
+}
+
+export async function patchMatchingEgg(id, payload) {
+  const res = await api.patch(`/orders/matching-eggs/${id}/`, payload);
+  return res.data;
+}
+
+export async function deleteMatchingEgg(id) {
+  const res = await api.delete(`/orders/matching-eggs/${id}/`);
+  return res.data;
+}

@@ -5,18 +5,18 @@ import "../accounting/AccountingTable.css";
 import "./Purchase.css";
 
 import { listCustomers, listProducts } from "../../services/accountingApi";
-import { createOrder, deleteOrder, listOrders, patchOrder } from "../../services/purchaseApi";
-import { getApiErrorMessage } from "../../utils/helpers";
+import { downloadOrderCommonFormXlsx } from "../../utils/excel";
 import {
-  loadAllOrderMatches,
-  deleteOrderMatch,
-  isOrderMatchSaved,
-} from "../../utils/orderMatchLocal";
+  createOrder,
+  deleteOrder,
+  listMatchingEggs,
+  listOrders,
+} from "../../services/purchaseApi";
 import {
-  loadAllOrderExtras,
-  saveOrderExtra,
-  deleteOrderExtra,
-} from "../../utils/orderExtraLocal";
+  getApiErrorMessage,
+  getIdentifierLabel,
+  toStringArray,
+} from "../../utils/helpers";
 
 function todayYmd() {
   const d = new Date();
@@ -30,32 +30,106 @@ function num(v, fallback = 0) {
   return Number.isFinite(n) ? n : fallback;
 }
 
-function fmt(n) {
-  return num(n, 0).toLocaleString();
+function fmt(v) {
+  return num(v, 0).toLocaleString();
 }
 
-function isTaxable(t) {
-  const s = String(t || "").toUpperCase();
-  return s === "TAXABLE" || s === "과세" || s === "TAX";
+function numOrBlank(v) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : "";
 }
 
-// 발주 목록 테이블: colgroup 퍼센트로 폭 조정
+function toPk(v) {
+  if (v == null) return "";
+  if (typeof v === "object") return String(v.id ?? v.pk ?? "");
+  return String(v);
+}
+
+function isQuantityConfirmed(order) {
+  if (order?.is_quantity_confirmed != null) return Boolean(order.is_quantity_confirmed);
+  const q = Number(order?.quantity);
+  return Number.isFinite(q) && q > 0;
+}
+
+function getOrderPk(order) {
+  const id = order?.id;
+  return id == null ? null : id;
+}
+
+function getOrderLabel(order) {
+  return getIdentifierLabel(order, ["order_id"], ["id"]);
+}
+
+function getCustomerLabel(customer) {
+  const code = getIdentifierLabel(customer, ["customer_code", "customer_id"], []);
+  const name = String(customer?.customer_name || "").trim();
+  if (name && code) return `${name} (${code})`;
+  return name || code || "-";
+}
+
+function getProductLabel(product) {
+  const code = getIdentifierLabel(product, ["product_no", "product_id"], []);
+  const name = String(product?.product_name || "").trim();
+  if (name && code) return `${name} (${code})`;
+  return name || code || "-";
+}
+
+function getClients(customer) {
+  return toStringArray(customer?.client);
+}
+
+function getTaxationLabel(order) {
+  const v = order?.taxation;
+  if (v === null || v === undefined || v === "") return "";
+  if (typeof v === "boolean") return v ? "과세" : "면세";
+
+  const s = String(v).trim().toLowerCase();
+  if (["taxable", "true", "1", "o", "y", "yes", "과세"].includes(s)) return "과세";
+  if (["exempt", "false", "0", "x", "n", "no", "면세", "non_taxable", "nontaxable"].includes(s)) {
+    return "면세";
+  }
+  return String(v);
+}
+
+async function fetchOrderMatchingSum(orderPk) {
+  if (orderPk == null) return 0;
+
+  let rows = [];
+  try {
+    rows = await listMatchingEggs({ order: orderPk });
+  } catch {
+    rows = [];
+  }
+
+  if (!Array.isArray(rows) || rows.length === 0) {
+    try {
+      rows = await listMatchingEggs({ order_id: orderPk });
+    } catch {
+      rows = [];
+    }
+  }
+
+  if (!Array.isArray(rows)) return 0;
+  const filtered = rows.filter((r) => {
+    if (r?.order == null) return true;
+    return String(r.order) === String(orderPk);
+  });
+  return filtered.reduce((sum, r) => sum + Math.max(0, num(r?.quantity, 0)), 0);
+}
+
 const ORDER_LIST_COLS = [
-  { key: "id", width: "4%" },
-  { key: "customer", width: "10%" },
-  { key: "center", width: "6%" },
-  { key: "product", width: "14%" },
-  { key: "qty", width: "5%" },
-  { key: "confirmed", width: "5%" },
-  { key: "tax", width: "4%" },
-  { key: "unit", width: "6%" },
-  { key: "supply", width: "6%" },
-  { key: "vat", width: "5%" },
-  { key: "date", width: "6%" },
-  { key: "memo", width: "9%" },
-  { key: "orderStatus", width: "5%" },
-  { key: "matchStatus", width: "5%" },
-  { key: "actions", width: "10%" },
+  { key: "order", width: "8%" },
+  { key: "customer", width: "13%" },
+  { key: "client", width: "11%" },
+  { key: "product", width: "15%" },
+  { key: "orderQty", width: "7%" },
+  { key: "confirmedQty", width: "7%" },
+  { key: "matchedQty", width: "7%" },
+  { key: "price", width: "7%" },
+  { key: "delivery", width: "8%" },
+  { key: "memo", width: "10%" },
+  { key: "status", width: "7%" },
+  { key: "actions", width: "20%" },
 ];
 
 export default function Purchase() {
@@ -65,64 +139,75 @@ export default function Purchase() {
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
 
-  // 발주 페이지 최초 진입 시: 오늘 날짜로 기본 조회
   const [date, setDate] = useState(sp.get("date") || todayYmd());
   const [rows, setRows] = useState([]);
+  const [matchingSums, setMatchingSums] = useState({});
+
   const [loading, setLoading] = useState(true);
+  const [loadingMatch, setLoadingMatch] = useState(false);
   const [err, setErr] = useState("");
 
-  // create form
   const [form, setForm] = useState({
-    customer: "", // 거처(고객사)
-    center_type: "", // 센터구분
-    product: "", // 제품
-    quantity: "", // 발주수량(판)
-    confirmed_quantity: "", // 확정수량(판)
-    tax_type: "TAXABLE", // 과세구분
-    unit_price: "", // 단가
+    customer: "",
+    client: "",
+    product: "",
+    order_quantity: "",
+    taxation: true,
+    price: "",
     delivery_date: sp.get("date") || todayYmd(),
-    memo: "", // 비고
+    memo: "",
   });
+
   const [submitting, setSubmitting] = useState(false);
   const [formErr, setFormErr] = useState("");
 
-  // local matching cache for status
-  const [localMatches, setLocalMatches] = useState(() => loadAllOrderMatches());
-  const [localExtras, setLocalExtras] = useState(() => loadAllOrderExtras());
-
-  const customersById = useMemo(() => {
+  const customersByPk = useMemo(() => {
     const m = {};
     (customers || []).forEach((c) => {
-      if (c?.id != null) m[String(c.id)] = c;
+      const pk = toPk(c);
+      if (pk) m[pk] = c;
     });
     return m;
   }, [customers]);
 
-  const productsById = useMemo(() => {
+  const productsByPk = useMemo(() => {
     const m = {};
     (products || []).forEach((p) => {
-      if (p?.id != null) m[String(p.id)] = p;
+      const pk = toPk(p);
+      if (pk) m[pk] = p;
     });
     return m;
   }, [products]);
 
-  const selectedProduct = useMemo(() => productsById[String(form.product)] || null, [form.product, productsById]);
+  const selectedCustomer = useMemo(
+    () => customersByPk[String(form.customer)] || null,
+    [customersByPk, form.customer]
+  );
 
-  const baseQty = useMemo(() => {
-    const cq = num(form.confirmed_quantity, NaN);
-    if (Number.isFinite(cq) && cq >= 0) return cq;
-    return num(form.quantity, 0);
-  }, [form.confirmed_quantity, form.quantity]);
+  const selectedProduct = useMemo(
+    () => productsByPk[String(form.product)] || null,
+    [productsByPk, form.product]
+  );
+
+  const clientOptions = useMemo(() => getClients(selectedCustomer), [selectedCustomer]);
+
+  const filteredProducts = useMemo(() => {
+    if (!form.customer) return products;
+    return (products || []).filter((p) => String(toPk(p?.customer)) === String(form.customer));
+  }, [products, form.customer]);
 
   const supplyPrice = useMemo(() => {
-    const up = num(form.unit_price, 0);
-    return Math.max(0, baseQty) * Math.max(0, up);
-  }, [baseQty, form.unit_price]);
+    return Math.max(0, num(form.order_quantity, 0)) * Math.max(0, num(form.price, 0));
+  }, [form.order_quantity, form.price]);
 
   const vatPrice = useMemo(() => {
-    if (!isTaxable(form.tax_type)) return 0;
+    if (!form.taxation) return 0;
     return Math.round(supplyPrice * 0.1);
-  }, [form.tax_type, supplyPrice]);
+  }, [form.taxation, supplyPrice]);
+
+  function setF(key, value) {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  }
 
   async function bootstrap() {
     setLoading(true);
@@ -138,15 +223,42 @@ export default function Purchase() {
     }
   }
 
+  async function fetchMatchingSummary(orders) {
+    const next = {};
+    const orderPks = (orders || [])
+      .map((o) => getOrderPk(o))
+      .filter((o) => o != null);
+
+    if (!orderPks.length) {
+      setMatchingSums({});
+      return;
+    }
+
+    setLoadingMatch(true);
+    try {
+      const sums = await Promise.all(
+        orderPks.map(async (orderPk) => [String(orderPk), await fetchOrderMatchingSum(orderPk)])
+      );
+      sums.forEach(([k, v]) => {
+        next[k] = v;
+      });
+      setMatchingSums(next);
+    } finally {
+      setLoadingMatch(false);
+    }
+  }
+
   async function fetchOrders(targetDate) {
     setLoading(true);
     setErr("");
     try {
       const list = await listOrders(targetDate ? { delivery_date: targetDate } : {});
       setRows(list);
+      await fetchMatchingSummary(list);
     } catch (e) {
       setErr(getApiErrorMessage(e, "발주 목록을 불러오지 못했습니다."));
       setRows([]);
+      setMatchingSums({});
     } finally {
       setLoading(false);
     }
@@ -158,146 +270,65 @@ export default function Purchase() {
   }, []);
 
   useEffect(() => {
-    // 날짜 선택 전에는 목록을 비워둡니다(불필요한 전체 조회 방지)
     if (!date) {
       setRows([]);
+      setMatchingSums({});
       return;
     }
     fetchOrders(date);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date]);
 
-  // local match/extra status should reflect after other page save
-  useEffect(() => {
-    const refresh = () => {
-      setLocalMatches(loadAllOrderMatches());
-      setLocalExtras(loadAllOrderExtras());
-    };
-    const onStorage = (e) => {
-      if (!e?.key) return;
-      if (e.key.includes("haemil_order_egg_matches") || e.key.includes("haemil_order_extras")) refresh();
-    };
-    const onCustom = () => refresh();
-    const onVis = () => {
-      if (document.visibilityState === "visible") refresh();
-    };
-    window.addEventListener("storage", onStorage);
-    window.addEventListener("haemil:orderMatchUpdated", onCustom);
-    document.addEventListener("visibilitychange", onVis);
-    return () => {
-      window.removeEventListener("storage", onStorage);
-      window.removeEventListener("haemil:orderMatchUpdated", onCustom);
-      document.removeEventListener("visibilitychange", onVis);
-    };
-  }, []);
-
-  function setF(k, v) {
-    setForm((p) => ({ ...p, [k]: v }));
-  }
-
-  function isConfirmed(order) {
-    if (!order) return false;
-    if (order?.is_confirmed != null) return Boolean(order.is_confirmed);
-    const s = String(order?.status || "").toUpperCase();
-    return s === "CONFIRMED" || s === "DONE" || s === "COMPLETED";
-  }
-
-  function getMatch(order) {
-    if (!order?.id) return null;
-    return localMatches?.[String(order.id)] || null;
-  }
-
-  function getExtra(order) {
-    if (!order?.id) return null;
-    return localExtras?.[String(order.id)] || null;
-  }
-
-  async function createOrderWithFallback(fullPayload, minimalPayload, extrasToStore) {
-    try {
-      const created = await createOrder(fullPayload);
-      if (created?.id != null && extrasToStore) {
-        // 백엔드에 필드가 아직 없어도 UI 표시를 위해 로컬에 저장
-        saveOrderExtra(created.id, extrasToStore);
-        setLocalExtras(loadAllOrderExtras());
-      }
-      return created;
-    } catch (e) {
-      // 백엔드 스키마 미구현(추가 필드로 400)일 수 있어 최소 payload로 재시도
-      const status = e?.response?.status;
-      if (status !== 400) throw e;
-      const created = await createOrder(minimalPayload);
-      if (created?.id != null && extrasToStore) {
-        saveOrderExtra(created.id, extrasToStore);
-        setLocalExtras(loadAllOrderExtras());
-      }
-      return created;
-    }
-  }
-
   async function onCreate(e) {
     e.preventDefault();
     if (submitting) return;
     setSubmitting(true);
     setFormErr("");
+
     try {
-      const payload = {
-        customer: Number(form.customer),
-        product: Number(form.product),
-        quantity: Number(form.quantity),
-        delivery_date: form.delivery_date,
-        ...(form.memo ? { history_memo: form.memo } : {}),
+      const customer = Number(form.customer);
+      const product = Number(form.product);
+      const orderQuantity = Number(form.order_quantity);
+      const price = form.price === "" ? null : Number(form.price);
+      const client = String(form.client || "").trim();
+      const hasMultiClientDelimiter = /[\r\n,]/.test(client);
 
-        // ✅ 백엔드 미구현일 수 있는 확장 필드들
-        ...(form.center_type ? { center_type: form.center_type } : {}),
-        ...(form.confirmed_quantity !== "" ? { confirmed_quantity: Number(form.confirmed_quantity) } : {}),
-        ...(form.tax_type ? { tax_type: form.tax_type } : {}),
-        ...(form.unit_price !== "" ? { unit_price: Number(form.unit_price) } : {}),
-        supply_price: supplyPrice,
-        vat_price: vatPrice,
-        remark: form.memo,
-        ...(selectedProduct?.egg_weight ? { product_egg_weight: selectedProduct.egg_weight } : {}),
-      };
+      const nextErrs = [];
+      if (!Number.isFinite(customer) || customer <= 0) nextErrs.push("고객사를 선택해주세요.");
+      if (!Number.isFinite(product) || product <= 0) nextErrs.push("제품을 선택해주세요.");
+      if (!Number.isFinite(orderQuantity) || orderQuantity < 0) nextErrs.push("발주수량을 숫자로 입력해주세요.");
+      if (!form.delivery_date) nextErrs.push("출고일자를 선택해주세요.");
+      if (!client) nextErrs.push("발주처를 입력하거나 선택해주세요.");
+      if (hasMultiClientDelimiter) nextErrs.push("발주에서는 납품처를 1개만 입력해주세요.");
+      if (form.price !== "" && (!Number.isFinite(price) || price < 0)) nextErrs.push("단가를 숫자로 입력해주세요.");
 
-      const minimal = {
-        customer: Number(form.customer),
-        product: Number(form.product),
-        quantity: Number(form.quantity),
-        delivery_date: form.delivery_date,
-        ...(form.memo ? { history_memo: form.memo } : {}),
-        ...(selectedProduct?.egg_weight ? { product_egg_weight: selectedProduct.egg_weight } : {}),
-      };
-
-      const errs = [];
-      if (!Number.isFinite(minimal.customer)) errs.push("거처(고객사)를 선택해주세요.");
-      if (!Number.isFinite(minimal.product)) errs.push("제품을 선택해주세요.");
-      if (!Number.isFinite(minimal.quantity) || minimal.quantity < 0) errs.push("발주수량(판)을 숫자로 입력해주세요.");
-      if (!minimal.delivery_date) errs.push("출고일자를 선택해주세요.");
-      if (errs.length) {
-        setFormErr(errs.join("\n"));
+      if (nextErrs.length) {
+        setFormErr(nextErrs.join("\n"));
         return;
       }
 
-      const extras = {
-        center_type: form.center_type,
-        confirmed_quantity: form.confirmed_quantity === "" ? null : Number(form.confirmed_quantity),
-        tax_type: form.tax_type,
-        unit_price: form.unit_price === "" ? null : Number(form.unit_price),
-        supply_price: supplyPrice,
-        vat_price: vatPrice,
-        remark: form.memo,
-        updated_at: new Date().toISOString(),
+      const payload = {
+        customer,
+        product,
+        order_quantity: orderQuantity,
+        client,
+        taxation: Boolean(form.taxation),
+        delivery_date: form.delivery_date,
+        ...(price != null ? { price } : {}),
+        ...(price != null ? { supply_price: supplyPrice } : {}),
+        ...(price != null ? { VAT: vatPrice } : {}),
+        ...(form.memo ? { memo: form.memo } : {}),
       };
 
-      await createOrderWithFallback(payload, minimal, extras);
+      await createOrder(payload);
 
       setForm({
         customer: "",
-        center_type: "",
+        client: "",
         product: "",
-        quantity: "",
-        confirmed_quantity: "",
-        tax_type: "TAXABLE",
-        unit_price: "",
+        order_quantity: "",
+        taxation: true,
+        price: "",
         delivery_date: date,
         memo: "",
       });
@@ -309,58 +340,105 @@ export default function Purchase() {
     }
   }
 
-  async function onConfirm(order) {
-    if (!order?.id) return;
-    const ok = window.confirm(`${order.id} 발주를 확인(완료) 처리할까요?`);
-    if (!ok) return;
-    try {
-      const extra = getExtra(order) || {};
-      const confirmedQty = order?.confirmed_quantity ?? extra?.confirmed_quantity ?? order?.quantity;
-      const payload = {
-        history_memo: "발주 확인",
-        is_confirmed: true,
-        status: "CONFIRMED",
-        confirmed_quantity: confirmedQty,
-      };
-      await patchOrder(order.id, payload);
-      await fetchOrders(date);
-    } catch (e) {
-      window.alert(getApiErrorMessage(e, "발주 확인 처리에 실패했습니다."));
-    }
-  }
-
   async function onDelete(order) {
-    if (!order?.id) return;
-    const ok = window.confirm(`${order.id} 발주를 삭제할까요?`);
+    const orderPk = getOrderPk(order);
+    if (!orderPk) return;
+    const ok = window.confirm(`${getOrderLabel(order)} 발주를 삭제할까요?`);
     if (!ok) return;
+
     try {
-      await deleteOrder(order.id);
-      deleteOrderMatch(order.id);
-      deleteOrderExtra(order.id);
-      setLocalMatches(loadAllOrderMatches());
-      setLocalExtras(loadAllOrderExtras());
+      await deleteOrder(orderPk);
       await fetchOrders(date);
     } catch (e) {
       window.alert(getApiErrorMessage(e, "발주 삭제에 실패했습니다."));
     }
   }
 
+  async function onExportOrderExcel() {
+    try {
+      const exportRows = rows.map((r) => {
+        const customerPk = toPk(r?.customer);
+        const productPk = toPk(r?.product);
+        const customer =
+          customersByPk[customerPk] ||
+          (typeof r?.customer === "object" ? r.customer : null);
+        const product =
+          productsByPk[productPk] ||
+          (typeof r?.product === "object" ? r.product : null);
+
+        const customerName =
+          String(customer?.customer_name || "").trim() ||
+          getIdentifierLabel(customer || {}, ["customer_code", "customer_id"], []) ||
+          customerPk ||
+          "-";
+
+        const productName =
+          String(product?.product_name || "").trim() ||
+          getIdentifierLabel(product || {}, ["product_no", "product_id"], []) ||
+          productPk ||
+          "-";
+
+        const orderQty = numOrBlank(r?.order_quantity);
+        const confirmedQty = numOrBlank(r?.quantity);
+        const price = numOrBlank(r?.price);
+        const supplyPrice = Number.isFinite(Number(r?.supply_price))
+          ? Number(r.supply_price)
+          : Number.isFinite(Number(price)) && Number.isFinite(Number(orderQty))
+            ? Number(price) * Number(orderQty)
+            : "";
+        const vat = Number.isFinite(Number(r?.VAT))
+          ? Number(r.VAT)
+          : Number.isFinite(Number(r?.vat))
+            ? Number(r.vat)
+            : getTaxationLabel(r) === "과세" && Number.isFinite(Number(supplyPrice))
+              ? Math.round(Number(supplyPrice) * 0.1)
+              : "";
+
+        return [
+          customerName,
+          String(r?.client || ""),
+          productName,
+          orderQty,
+          confirmedQty,
+          getTaxationLabel(r),
+          price,
+          supplyPrice,
+          vat,
+          String(r?.delivery_date || "").slice(0, 10),
+          String(r?.memo || ""),
+        ];
+      });
+
+      await downloadOrderCommonFormXlsx(exportRows);
+    } catch (e) {
+      window.alert(getApiErrorMessage(e, "발주목록 엑셀 출력에 실패했습니다."));
+    }
+  }
+
   return (
     <div className="purchase-shell">
-      {/* Card 1: 헤더 + 조회/등록 */}
       <div className="page-card">
         <div className="purchase-head">
           <div>
-            <h2 className="page-title" style={{ margin: 0 }}>발주</h2>
+            <h2 className="page-title" style={{ margin: 0 }}>발주 추가</h2>
             <div className="sub" style={{ marginTop: "var(--sp-8)" }}>
-              상단에서 발주를 추가하고, 하단에서 선택한 날짜의 발주 목록을 확인합니다.
+              발주를 등록한 뒤 생산수량확정, 원란매칭, 작업지시서 순서로 진행하세요.
             </div>
           </div>
+
           <div className="head-actions">
             <div className="field-row">
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-              <button className="btn secondary" onClick={() => fetchOrders(date)} disabled={loading}>
+              <button type="button" className="btn secondary" onClick={() => fetchOrders(date)} disabled={loading}>
                 조회
+              </button>
+              <button
+                type="button"
+                className="btn secondary"
+                onClick={onExportOrderExcel}
+                disabled={loading || rows.length === 0}
+              >
+                엑셀출력
               </button>
             </div>
           </div>
@@ -371,68 +449,87 @@ export default function Purchase() {
         <form className="purchase-remote" onSubmit={onCreate}>
           <div className="remote-grid">
             <div className="field">
-              <label>거처</label>
-              <select value={form.customer} onChange={(e) => setF("customer", e.target.value)}>
+              <label>고객사</label>
+              <select
+                value={form.customer}
+                onChange={(e) => {
+                  const nextCustomer = e.target.value;
+                  setForm((prev) => ({
+                    ...prev,
+                    customer: nextCustomer,
+                    product: "",
+                    client: "",
+                  }));
+                }}
+              >
                 <option value="">선택</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.customer_name}</option>
-                ))}
+                {customers.map((c) => {
+                  const pk = toPk(c);
+                  return (
+                    <option key={pk} value={pk}>
+                      {getCustomerLabel(c)}
+                    </option>
+                  );
+                })}
               </select>
-              <div className="field-help">고객사 선택</div>
             </div>
 
             <div className="field">
-              <label>센터구분</label>
-              <input value={form.center_type} onChange={(e) => setF("center_type", e.target.value)} placeholder="예: A센터" />
+              <label>발주처</label>
+              {clientOptions.length > 0 ? (
+                <select value={form.client} onChange={(e) => setF("client", e.target.value)}>
+                  <option value="">선택</option>
+                  {clientOptions.map((clientName) => (
+                    <option key={clientName} value={clientName}>
+                      {clientName}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <input
+                  value={form.client}
+                  onChange={(e) => setF("client", e.target.value)}
+                  placeholder="발주처(1개)"
+                />
+              )}
             </div>
 
             <div className="field remote-span-2">
-              <label>제품이름</label>
+              <label>제품</label>
               <select value={form.product} onChange={(e) => setF("product", e.target.value)}>
                 <option value="">선택</option>
-                {products.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.product_name}({p.id}){p.egg_weight ? ` (${p.egg_weight})` : ""}
-                  </option>
-                ))}
+                {filteredProducts.map((p) => {
+                  const pk = toPk(p);
+                  return (
+                    <option key={pk} value={pk}>
+                      {getProductLabel(p)}
+                    </option>
+                  );
+                })}
               </select>
               <div className="field-help">
-                {selectedProduct?.egg_weight ? (
-                  <>선택 제품 난중: <b>{selectedProduct.egg_weight}</b></>
-                ) : (
-                  "제품에 난중 정보가 없으면 원란 매칭 필터가 제한될 수 있습니다."
-                )}
+                {selectedProduct ? `선택 제품 식별자: ${getIdentifierLabel(selectedProduct, ["product_no", "product_id"], ["id"])}` : ""}
               </div>
             </div>
 
             <div className="field">
-              <label>발주수량(판)</label>
+              <label>발주수량</label>
               <input
                 type="number"
-                value={form.quantity}
-                onChange={(e) => setF("quantity", e.target.value)}
+                value={form.order_quantity}
+                onChange={(e) => setF("order_quantity", e.target.value)}
                 min={0}
                 step={1}
-                placeholder="예: 10"
-              />
-              <div className="field-help">1판 = 30알 (고정)</div>
-            </div>
-
-            <div className="field">
-              <label>확정수량(판)</label>
-              <input
-                type="number"
-                value={form.confirmed_quantity}
-                onChange={(e) => setF("confirmed_quantity", e.target.value)}
-                min={0}
-                step={1}
-                placeholder="(선택)"
+                placeholder="예: 100"
               />
             </div>
 
             <div className="field">
-              <label>과세구분</label>
-              <select value={form.tax_type} onChange={(e) => setF("tax_type", e.target.value)}>
+              <label>과세여부</label>
+              <select
+                value={form.taxation ? "TAXABLE" : "EXEMPT"}
+                onChange={(e) => setF("taxation", e.target.value === "TAXABLE")}
+              >
                 <option value="TAXABLE">과세</option>
                 <option value="EXEMPT">면세</option>
               </select>
@@ -442,8 +539,8 @@ export default function Purchase() {
               <label>단가</label>
               <input
                 type="number"
-                value={form.unit_price}
-                onChange={(e) => setF("unit_price", e.target.value)}
+                value={form.price}
+                onChange={(e) => setF("price", e.target.value)}
                 min={0}
                 step={1}
                 placeholder="예: 3500"
@@ -462,24 +559,33 @@ export default function Purchase() {
 
             <div className="field">
               <label>출고일자</label>
-              <input type="date" value={form.delivery_date} onChange={(e) => setF("delivery_date", e.target.value)} />
+              <input
+                type="date"
+                value={form.delivery_date}
+                onChange={(e) => setF("delivery_date", e.target.value)}
+              />
             </div>
 
             <div className="field remote-span-3">
               <label>비고</label>
-              <input value={form.memo} onChange={(e) => setF("memo", e.target.value)} placeholder="(선택)" />
+              <input
+                value={form.memo}
+                onChange={(e) => setF("memo", e.target.value)}
+                placeholder="(선택)"
+              />
             </div>
           </div>
 
           {formErr && <div className="field-error" style={{ whiteSpace: "pre-wrap" }}>{formErr}</div>}
 
           <div className="remote-actions">
-            <button className="btn" type="submit" disabled={submitting}>발주 추가</button>
+            <button className="btn" type="submit" disabled={submitting}>
+              발주 추가
+            </button>
           </div>
         </form>
       </div>
 
-      {/* Card 2: 목록 */}
       <div className="page-card">
         <div className="purchase-table-wrap">
           <table className="data-table purchase-table">
@@ -491,89 +597,106 @@ export default function Purchase() {
             <thead>
               <tr>
                 <th>발주번호</th>
-                <th>거처</th>
-                <th>센터</th>
+                <th>고객사</th>
+                <th>발주처</th>
                 <th>제품</th>
-                <th>발주</th>
-                <th>확정</th>
-                <th>과세</th>
+                <th>발주수량</th>
+                <th>확정수량</th>
+                <th>매칭수량</th>
                 <th>단가</th>
-                <th>공급가</th>
-                <th>부가세</th>
                 <th>출고일자</th>
                 <th>비고</th>
-                <th>발주</th>
-                <th>원란</th>
+                <th>상태</th>
                 <th>관리</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr><td colSpan={15} className="muted">불러오는 중...</td></tr>
+                <tr><td colSpan={12} className="muted">불러오는 중..</td></tr>
               ) : rows.length === 0 ? (
-                <tr><td colSpan={15} className="muted">해당 날짜의 발주가 없습니다.</td></tr>
+                <tr><td colSpan={12} className="muted">해당 날짜의 발주가 없습니다.</td></tr>
               ) : (
                 rows.map((r) => {
-                  const c = customersById[String(r?.customer ?? "")];
-                  const p = productsById[String(r?.product ?? "")];
-                  const extra = getExtra(r) || {};
+                  const orderPk = getOrderPk(r);
+                  const customerPk = toPk(r?.customer);
+                  const productPk = toPk(r?.product);
 
-                  const confirmed = isConfirmed(r);
-                  const match = getMatch(r);
-                  const matchSaved = isOrderMatchSaved(match);
+                  const customer =
+                    customersByPk[customerPk] ||
+                    (typeof r?.customer === "object" ? r.customer : null);
+                  const product =
+                    productsByPk[productPk] ||
+                    (typeof r?.product === "object" ? r.product : null);
 
-                  const productLabel = p?.product_name ? `${p.product_name}(${p.id})` : (r?.product != null ? String(r.product) : "-");
-                  const center = r?.center_type ?? extra?.center_type ?? "-";
-                  const orderQty = num(r?.quantity, 0);
-                  const confirmedQty = num(r?.confirmed_quantity ?? extra?.confirmed_quantity, NaN);
-                  const confirmedQtyShow = Number.isFinite(confirmedQty) ? confirmedQty : "-";
-                  const tax = r?.tax_type ?? extra?.tax_type ?? "-";
-                  const unit = num(r?.unit_price ?? extra?.unit_price, NaN);
-                  const unitShow = Number.isFinite(unit) ? fmt(unit) : "-";
-
-                  const base = Number.isFinite(confirmedQty) ? confirmedQty : orderQty;
-                  const supply = num(r?.supply_price ?? extra?.supply_price, NaN);
-                  const supplyComputed = Number.isFinite(supply) ? supply : (Number.isFinite(unit) ? base * unit : 0);
-                  const vat = num(r?.vat_price ?? extra?.vat_price, NaN);
-                  const vatComputed = Number.isFinite(vat) ? vat : (isTaxable(tax) ? Math.round(supplyComputed * 0.1) : 0);
+                  const orderQty = num(r?.order_quantity, 0);
+                  const confirmedQty = num(r?.quantity, NaN);
+                  const quantityConfirmed = isQuantityConfirmed(r);
+                  const matchedQty = orderPk == null ? 0 : num(matchingSums[String(orderPk)], 0);
+                  const matchDone = quantityConfirmed && Number.isFinite(confirmedQty) && matchedQty === confirmedQty;
 
                   return (
-                    <tr key={r.id}>
-                      <td>{r.id}</td>
-                      <td>{c?.customer_name || r?.customer || "-"}</td>
-                      <td>{center}</td>
-                      <td title={productLabel}>{productLabel}</td>
+                    <tr key={orderPk ?? getOrderLabel(r)}>
+                      <td>{getOrderLabel(r)}</td>
+                      <td>{getCustomerLabel(customer || { customer_name: "", customer_code: customerPk })}</td>
+                      <td>{String(r?.client || "-")}</td>
+                      <td>{getProductLabel(product || { product_name: "", product_no: productPk })}</td>
                       <td>{fmt(orderQty)}</td>
-                      <td>{confirmedQtyShow === "-" ? "-" : fmt(confirmedQtyShow)}</td>
-                      <td>{tax === "TAXABLE" ? "과세" : tax === "EXEMPT" ? "면세" : tax}</td>
-                      <td>{unitShow}</td>
-                      <td>{supplyComputed ? fmt(supplyComputed) : "-"}</td>
-                      <td>{vatComputed ? fmt(vatComputed) : "-"}</td>
+                      <td>{Number.isFinite(confirmedQty) ? fmt(confirmedQty) : "-"}</td>
+                      <td>{fmt(matchedQty)}</td>
+                      <td>{r?.price != null ? fmt(r.price) : "-"}</td>
                       <td>{String(r?.delivery_date || "").slice(0, 10)}</td>
-                      <td title={extra?.remark || r?.remark || ""}>{extra?.remark || r?.remark || "-"}</td>
-                      <td><span className={`badge ${confirmed ? "ok" : "neutral"}`}>{confirmed ? "발주완료" : "미확정"}</span></td>
-                      <td><span className={`badge ${matchSaved ? "ok" : "warn"}`}>{matchSaved ? "원란확인" : "원란미정"}</span></td>
+                      <td className="wrap-cell">{String(r?.memo || "-")}</td>
+                      <td>
+                        <span className={`badge ${matchDone ? "ok" : quantityConfirmed ? "neutral" : "warn"}`}>
+                          {matchDone ? "매칭완료" : quantityConfirmed ? "수량확정" : "미확정"}
+                        </span>
+                        {loadingMatch && <div className="field-help">매칭 확인중...</div>}
+                      </td>
                       <td>
                         <span className="row-actions">
                           <button
                             className="btn secondary small"
-                            onClick={() => onConfirm(r)}
-                            disabled={confirmed}
-                            title={confirmed ? "이미 발주완료" : "발주 확인"}
+                            onClick={() => {
+                              const qs = new URLSearchParams();
+                              if (date) qs.set("date", date);
+                              if (orderPk != null) qs.set("orderId", String(orderPk));
+                              nav(`/purchase/quantity-confirmation?${qs.toString()}`);
+                            }}
                           >
-                            {confirmed ? "완료" : "발주 확인"}
+                            생산수량확정
                           </button>
+
                           <button
                             className="btn secondary small"
+                            disabled={!quantityConfirmed}
+                            title={!quantityConfirmed ? "생산수량확정 후 진행 가능합니다." : ""}
                             onClick={() => {
-                              const qs = new URLSearchParams({ orderId: String(r.id) });
+                              const qs = new URLSearchParams();
                               if (date) qs.set("date", date);
+                              if (orderPk != null) qs.set("orderId", String(orderPk));
                               nav(`/purchase/egg-matching?${qs.toString()}`);
                             }}
                           >
                             원란매칭
                           </button>
-                          <button className="btn danger small" onClick={() => onDelete(r)} title="발주 삭제">삭제</button>
+
+                          <button
+                            className="btn secondary small"
+                            disabled={!matchDone}
+                            title={!matchDone ? "원란매칭 수량이 확정수량과 같아야 합니다." : ""}
+                            onClick={() => {
+                              const qs = new URLSearchParams();
+                              if (date) qs.set("date", date);
+                              if (orderPk != null) qs.set("orderId", String(orderPk));
+                              nav(`/purchase/work-orders?${qs.toString()}`);
+                            }}
+                          >
+                            작업지시서
+                          </button>
+
+                          <button className="btn danger small" onClick={() => onDelete(r)}>
+                            삭제
+                          </button>
                         </span>
                       </td>
                     </tr>

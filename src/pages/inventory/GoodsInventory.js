@@ -9,9 +9,10 @@ import {
 import { listProducts } from "../../services/accountingApi";
 import {
   asText,
+  getApiErrorMessage,
+  getIdentifierLabel,
   includesAnyTokens,
   includesText,
-  matchBool,
   parseDRFErrors,
 } from "../../utils/helpers";
 import { downloadProductLotListXlsx } from "../../utils/excel";
@@ -20,13 +21,6 @@ import SearchBar from "../../components/common/SearchBar";
 import Pagination from "../../components/common/Pagination";
 import "../accounting/AccountingTable.css";
 
-// 재고 페이지 활성여부 표기(농장정보와 동일: 유/무)
-const ACTIVE_OPTIONS = [
-  { value: "", label: "전체" },
-  { value: "true", label: "유" },
-  { value: "false", label: "무" },
-];
-
 function ymd(v) {
   const s = asText(v);
   if (!s) return "";
@@ -34,17 +28,32 @@ function ymd(v) {
   return s;
 }
 
-function toId(v) {
+function toPk(v) {
   if (v == null) return "";
-  if (typeof v === "object") return asText(v.id ?? v.pk ?? "");
-  return asText(v);
+  if (typeof v === "object") return String(v.id ?? v.pk ?? "");
+  return String(v);
 }
 
-function toName(v, byId, nameKey = "product_name") {
-  if (!v) return "";
-  if (typeof v === "object") return asText(v[nameKey] ?? v.name ?? v.title);
-  const id = asText(v);
-  return asText(byId?.[id]?.[nameKey] ?? "");
+function toFilterNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+function productLabel(product) {
+  if (!product) return "-";
+  const id = getIdentifierLabel(product, ["product_no", "product_id"], ["id"]);
+  const name = asText(product?.product_name);
+  if (name && id) return `${name} (${id})`;
+  return name || id || "-";
+}
+
+function eggLotLabel(lot) {
+  if (!lot) return "-";
+  const id = getIdentifierLabel(lot, ["Egglot_no", "egg_lot_id"], ["id"]);
+  const recv = ymd(lot?.receiving_date);
+  return [id, recv].filter(Boolean).join(" / ") || "-";
 }
 
 export default function GoodsInventory() {
@@ -54,7 +63,6 @@ export default function GoodsInventory() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // CRUD
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [submitting, setSubmitting] = useState(false);
@@ -65,64 +73,52 @@ export default function GoodsInventory() {
     egg_lot: "",
     quantity: "",
     location: "",
+    process_day: "",
+    machine_line: "",
     memo: "",
-    is_active: true,
+    history_memo: "",
   });
 
-  // 상단 검색
   const [searchField, setSearchField] = useState("all");
   const [searchText, setSearchText] = useState("");
 
-  // 좌측 필터
   const [fProduct, setFProduct] = useState("");
-  const [fEggLot, setFEggLot] = useState("");
-  const [fProcessType, setFProcessType] = useState("");
-  const [fQtyMin, setFQtyMin] = useState("");
-  const [fQtyMax, setFQtyMax] = useState("");
+  const [fProcessDay, setFProcessDay] = useState("");
   const [fLocation, setFLocation] = useState("");
-  const [fIsActive, setFIsActive] = useState("");
+  const [fQuantityMin, setFQuantityMin] = useState("");
+  const [fQuantityMax, setFQuantityMax] = useState("");
+  const [fLine, setFLine] = useState("");
 
-  // Pagination
   const [page, setPage] = useState(1);
   const pageSize = 10;
 
   const SEARCH_FIELDS = [
     { value: "all", label: "전체" },
+    { value: "ProductLot_no", label: "제품재고식별자" },
     { value: "product", label: "제품" },
-    { value: "egg_lot", label: "계란재고" },
-    { value: "location", label: "위치" },
+    { value: "egg_lot", label: "계란식별자" },
     { value: "memo", label: "메모" },
-    { value: "id", label: "제품재고ID" },
   ];
 
-  const productsById = useMemo(() => {
+  const productsByPk = useMemo(() => {
     const m = {};
     (products || []).forEach((p) => {
-      const id = p?.id;
-      if (id != null) m[String(id)] = p;
+      const pk = toPk(p);
+      if (pk) m[pk] = p;
     });
     return m;
   }, [products]);
 
-  const processTypes = useMemo(() => {
-    const set = new Set();
-    (products || []).forEach((p) => {
-      const v = asText(p?.process_type);
-      if (v) set.add(v);
-    });
-    return ["", ...Array.from(set)];
-  }, [products]);
-
-  const eggLotsById = useMemo(() => {
+  const eggLotsByPk = useMemo(() => {
     const m = {};
     (eggLots || []).forEach((l) => {
-      const id = l?.id;
-      if (id != null) m[String(id)] = l;
+      const pk = toPk(l);
+      if (pk) m[pk] = l;
     });
     return m;
   }, [eggLots]);
 
-  const fetchRows = async () => {
+  async function fetchRows() {
     setLoading(true);
     setErr("");
     try {
@@ -135,26 +131,34 @@ export default function GoodsInventory() {
       setProducts(prods);
       setEggLots(eggs);
     } catch (e) {
-      setErr(e?.response?.data?.detail || "제품재고 목록을 불러오지 못했습니다.");
+      setErr(getApiErrorMessage(e, "제품재고 목록을 불러오지 못했습니다."));
     } finally {
       setLoading(false);
     }
-  };
+  }
+
+  useEffect(() => {
+    fetchRows();
+  }, []);
 
   const onSearch = async () => {
     await fetchRows();
   };
 
-  useEffect(() => {
-    fetchRows();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
   function openCreate() {
     setEditing(null);
     setFormErr("");
     setFieldErrs({});
-    setForm({ product: "", egg_lot: "", quantity: "", location: "", memo: "", is_active: true });
+    setForm({
+      product: "",
+      egg_lot: "",
+      quantity: "",
+      location: "",
+      process_day: "",
+      machine_line: "",
+      memo: "",
+      history_memo: "",
+    });
     setModalOpen(true);
   }
 
@@ -163,12 +167,14 @@ export default function GoodsInventory() {
     setFormErr("");
     setFieldErrs({});
     setForm({
-      product: toId(row?.product) || "",
-      egg_lot: toId(row?.egg_lot) || "",
-      quantity: row?.quantity ?? "",
-      location: asText(row?.location) || "",
-      memo: asText(row?.memo) || "",
-      is_active: Boolean(row?.is_active),
+      product: toPk(row?.product),
+      egg_lot: toPk(row?.egg_lot),
+      quantity: row?.quantity == null ? "" : String(row.quantity),
+      location: asText(row?.location),
+      process_day: ymd(row?.process_day),
+      machine_line: asText(row?.machine_line),
+      memo: asText(row?.memo),
+      history_memo: "",
     });
     setModalOpen(true);
   }
@@ -199,18 +205,21 @@ export default function GoodsInventory() {
         product: Number(form.product),
         egg_lot: Number(form.egg_lot),
         quantity: Number(form.quantity),
-        location: form.location,
-        is_active: Boolean(form.is_active),
-        ...(form.memo ? { memo: form.memo } : {}),
+        location: String(form.location || "").trim(),
+        ...(String(form.process_day || "").trim() ? { process_day: String(form.process_day).trim() } : {}),
+        ...(String(form.machine_line || "").trim() ? { machine_line: String(form.machine_line).trim() } : {}),
+        ...(String(form.memo || "").trim() ? { memo: String(form.memo).trim() } : {}),
+        ...(editing?.id != null ? { history_memo: String(form.history_memo || "").trim() } : {}),
       };
 
-      const errs = {};
-      if (!Number.isFinite(payload.product)) errs.product = "제품을 선택해주세요.";
-      if (!Number.isFinite(payload.egg_lot)) errs.egg_lot = "계란재고를 선택해주세요.";
-      if (!Number.isFinite(payload.quantity)) errs.quantity = "수량을 숫자로 입력해주세요.";
-      if (!payload.location?.trim()) errs.location = "위치를 입력해주세요.";
-      if (Object.keys(errs).length) {
-        setFieldErrs(errs);
+      const nextErrs = {};
+      if (!Number.isFinite(payload.product)) nextErrs.product = "제품을 선택해주세요.";
+      if (!Number.isFinite(payload.egg_lot)) nextErrs.egg_lot = "계란식별자를 선택해주세요.";
+      if (!Number.isFinite(payload.quantity)) nextErrs.quantity = "수량은 숫자여야 합니다.";
+      if (!payload.location) nextErrs.location = "위치를 입력해주세요.";
+      if (editing?.id != null && !payload.history_memo) nextErrs.history_memo = "수정 시 변경내역 메모를 입력해주세요.";
+      if (Object.keys(nextErrs).length) {
+        setFieldErrs(nextErrs);
         return;
       }
 
@@ -229,89 +238,98 @@ export default function GoodsInventory() {
   }
 
   async function onDelete(row) {
-    const productLabel = toName(row?.product, productsById, "product_name");
-    const ok = window.confirm(`'${row?.id ?? ""}(${productLabel || ""})' 제품재고를 삭제할까요?`);
+    const label = getIdentifierLabel(row, ["ProductLot_no", "product_lot_id"], ["id"]);
+    const ok = window.confirm(`'${label}' 제품재고를 삭제할까요?`);
     if (!ok) return;
     try {
       await deleteProductLot(row.id);
       setRows((prev) => prev.filter((r) => r?.id !== row.id));
     } catch (e) {
-      alert(e?.response?.data?.detail || "삭제에 실패했습니다.");
+      window.alert(getApiErrorMessage(e, "삭제에 실패했습니다."));
     }
   }
 
   const filtered = useMemo(() => {
     const q = searchText.trim();
-    const qtyMin = fQtyMin !== "" ? Number(fQtyMin) : null;
-    const qtyMax = fQtyMax !== "" ? Number(fQtyMax) : null;
-
+    const quantityMin = toFilterNumber(fQuantityMin);
+    const quantityMax = toFilterNumber(fQuantityMax);
     return (rows || []).filter((r) => {
-      const productId = toId(r?.product);
-      const productName = toName(r?.product, productsById, "product_name");
-      const productText = `${productName} ${productId}`.trim();
+      const product =
+        productsByPk[toPk(r?.product)] ||
+        (typeof r?.product === "object" ? r.product : null);
+      const productText = productLabel(product || { product_no: toPk(r?.product) });
 
-      const proc = asText(productsById?.[String(productId)]?.process_type);
+      const eggLot =
+        eggLotsByPk[toPk(r?.egg_lot)] ||
+        (typeof r?.egg_lot === "object" ? r.egg_lot : null);
+      const eggText = eggLotLabel(eggLot || { Egglot_no: toPk(r?.egg_lot) });
 
-      const eggLotId = toId(r?.egg_lot);
-      const eggLotReceiving = ymd(eggLotsById?.[eggLotId]?.receiving_date);
-      const eggLotText = `${eggLotId} ${eggLotReceiving}`.trim();
+      const quantity = Number(r?.quantity);
+      const processDay = ymd(r?.process_day);
 
       if (fProduct && !includesAnyTokens(productText, fProduct)) return false;
-      if (fEggLot && !includesAnyTokens(eggLotText, fEggLot)) return false;
-      if (fProcessType && proc !== fProcessType) return false;
-      if (qtyMin != null && Number(r?.quantity ?? 0) < qtyMin) return false;
-      if (qtyMax != null && Number(r?.quantity ?? 0) > qtyMax) return false;
+      if (fProcessDay && processDay !== fProcessDay) return false;
       if (fLocation && !includesAnyTokens(r?.location, fLocation)) return false;
-      if (!matchBool(r?.is_active, fIsActive)) return false;
+      if (quantityMin != null && (!Number.isFinite(quantity) || quantity < quantityMin)) return false;
+      if (quantityMax != null && (!Number.isFinite(quantity) || quantity > quantityMax)) return false;
+      if (fLine && !includesAnyTokens(r?.machine_line, fLine)) return false;
 
       if (!q) return true;
-      if (searchField === "all") {
-        return (
-          includesText(productText, q) ||
-          includesText(eggLotText, q) ||
-          includesText(r?.location, q) ||
-          includesText(r?.memo, q) ||
-          includesText(r?.id, q)
+      if (searchField === "ProductLot_no") {
+        return includesText(
+          getIdentifierLabel(r, ["ProductLot_no", "product_lot_id"], ["id"]),
+          q
         );
       }
       if (searchField === "product") return includesText(productText, q);
-      if (searchField === "egg_lot") return includesText(eggLotText, q);
-      return includesText(r?.[searchField], q);
-    });
-  }, [
-    rows,
-    productsById,
-    eggLotsById,
-    searchText,
-    searchField,
-    fProduct,
-    fEggLot,
-    fProcessType,
-    fQtyMin,
-    fQtyMax,
-    fLocation,
-    fIsActive,
-  ]);
+      if (searchField === "egg_lot") return includesText(eggText, q);
+      if (searchField === "location") return includesText(r?.location, q);
+      if (searchField === "memo") return includesText(r?.memo, q);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      return (
+        includesText(getIdentifierLabel(r, ["ProductLot_no", "product_lot_id"], ["id"]), q) ||
+        includesText(productText, q) ||
+        includesText(eggText, q) ||
+        includesText(r?.location, q) ||
+        includesText(processDay, q) ||
+        includesText(r?.machine_line, q) ||
+        includesText(r?.memo, q)
+      );
+    });
+  }, [rows, productsByPk, eggLotsByPk, searchText, searchField, fProduct, fProcessDay, fLocation, fQuantityMin, fQuantityMax, fLine]);
+
   useEffect(() => {
-    if (page > totalPages) setPage(1);
-  }, [page, totalPages]);
+    setPage(1);
+  }, [searchField, searchText, fProduct, fProcessDay, fLocation, fQuantityMin, fQuantityMax, fLine]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(filtered.length / pageSize)), [filtered.length]);
+  useEffect(() => {
+    setPage((p) => Math.min(Math.max(1, p), totalPages));
+  }, [totalPages]);
 
   const paged = useMemo(() => {
     const start = (page - 1) * pageSize;
     return filtered.slice(start, start + pageSize);
-  }, [filtered, page, pageSize]);
+  }, [filtered, page]);
 
   function onExcelExport() {
     const body = filtered.map((r) => [
-      r?.id ?? "",
-      toId(r?.product),
-      toId(r?.egg_lot),
-      r?.quantity ?? "",
-      asText(r?.location ?? ""),
-      asText(r?.memo ?? ""),
-      r?.is_active ? "유" : "무",
+      getIdentifierLabel(r, ["ProductLot_no", "product_lot_id"], ["id"]),
+      getIdentifierLabel(
+        productsByPk[toPk(r?.product)] || {},
+        ["product_no", "product_id"],
+        [toPk(r?.product)]
+      ),
+      getIdentifierLabel(
+        eggLotsByPk[toPk(r?.egg_lot)] || {},
+        ["Egglot_no", "egg_lot_id"],
+        [toPk(r?.egg_lot)]
+      ),
+      asText(r?.quantity || ""),
+      asText(r?.location || ""),
+      ymd(r?.process_day),
+      asText(r?.machine_line || ""),
+      asText(r?.memo || ""),
     ]);
     downloadProductLotListXlsx(body);
   }
@@ -322,44 +340,18 @@ export default function GoodsInventory() {
         <div className="filters-title">필터</div>
 
         <div className="filter-group">
-          <div className="filter-label">제품명(키워드 검색)</div>
-          <input className="filter-input" value={fProduct} onChange={(e) => setFProduct(e.target.value)} placeholder="제품명(ID)" />
+          <div className="filter-label">제품</div>
+          <input className="filter-input" value={fProduct} onChange={(e) => setFProduct(e.target.value)} placeholder="예: 제품명 제품식별자" />
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">계란재고(키워드 검색)</div>
-          <input className="filter-input" value={fEggLot} onChange={(e) => setFEggLot(e.target.value)} placeholder="계란재고(ID/입고일)" />
-        </div>
-
-        <div className="filter-group">
-          <div className="filter-label">가공유형</div>
-          <select className="filter-select" value={fProcessType} onChange={(e) => setFProcessType(e.target.value)}>
-            {processTypes.map((v) => (
-              <option key={v || "__all__"} value={v}>
-                {v || "전체"}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="filter-group">
-          <div className="filter-label">수량</div>
-          <div style={{ display: "flex", gap: "var(--sp-8)" }}>
-            <input
-              className="filter-input"
-              inputMode="numeric"
-              value={fQtyMin}
-              onChange={(e) => setFQtyMin(e.target.value)}
-              placeholder="min"
-            />
-            <input
-              className="filter-input"
-              inputMode="numeric"
-              value={fQtyMax}
-              onChange={(e) => setFQtyMax(e.target.value)}
-              placeholder="max"
-            />
-          </div>
+          <div className="filter-label">공정일</div>
+          <input
+            className="filter-input"
+            type="date"
+            value={fProcessDay}
+            onChange={(e) => setFProcessDay(e.target.value)}
+          />
         </div>
 
         <div className="filter-group">
@@ -367,32 +359,42 @@ export default function GoodsInventory() {
           <input className="filter-input" value={fLocation} onChange={(e) => setFLocation(e.target.value)} placeholder="위치" />
         </div>
 
-        <div className="filter-group" style={{ marginBottom: 0 }}>
-          <div className="filter-label">활성여부</div>
-          <select className="filter-select" value={fIsActive} onChange={(e) => setFIsActive(e.target.value)}>
-            {ACTIVE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+        <div className="filter-group">
+          <div className="filter-label">수량</div>
+          <div className="field-row range-row">
+            <input
+              className="filter-input"
+              inputMode="numeric"
+              placeholder="최소"
+              value={fQuantityMin}
+              onChange={(e) => setFQuantityMin(e.target.value)}
+            />
+            <input
+              className="filter-input"
+              inputMode="numeric"
+              placeholder="최대"
+              value={fQuantityMax}
+              onChange={(e) => setFQuantityMax(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="filter-group">
+          <div className="filter-label">라인</div>
+          <input className="filter-input" value={fLine} onChange={(e) => setFLine(e.target.value)} placeholder="라인" />
         </div>
       </div>
 
       <div className="page-main">
-        
         <div className="page-head">
           <h2 className="page-title">제품재고</h2>
-
           <div className="head-actions">
             <button className="btn secondary" type="button" onClick={openCreate}>
               + 제품재고 추가
             </button>
-
             <button className="btn secondary" type="button" onClick={onExcelExport}>
               엑셀 출력
             </button>
-
             <SearchBar
               field={searchField}
               setField={setSearchField}
@@ -407,62 +409,53 @@ export default function GoodsInventory() {
         </div>
 
         <div className="muted" style={{ marginBottom: "var(--sp-10)" }}>
-          {loading ? "불러오는 중..." : err ? err : `총 ${filtered.length}건`}
+          {loading ? "불러오는 중.." : err ? err : `총 ${filtered.length}건`}
         </div>
-{err && <div className="field-error" style={{ marginTop: "var(--sp-10)" }}>{err}</div>}
+        {err && <div className="field-error" style={{ marginTop: "var(--sp-10)" }}>{err}</div>}
 
         <div className="table-wrap no-x" style={{ marginTop: "var(--sp-12)" }}>
           <table className="data-table product-table">
             <thead>
               <tr>
-                <th>제품재고ID</th>
+                <th>제품재고식별자</th>
                 <th>제품</th>
-                <th>계란재고</th>
+                <th>계란식별자</th>
                 <th>수량</th>
                 <th>위치</th>
+                <th>공정일</th>
+                <th>라인</th>
                 <th>메모</th>
-                <th>활성</th>
                 <th className="actions-cell">작업</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
-                <tr>
-                  <td colSpan={8} className="muted">불러오는 중...</td>
-                </tr>
-              ) : paged.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="muted">데이터가 없습니다.</td>
-                </tr>
+                <tr><td colSpan={9} className="muted">불러오는 중..</td></tr>
+              ) : !paged.length ? (
+                <tr><td colSpan={9} className="muted">데이터가 없습니다.</td></tr>
               ) : (
                 paged.map((r) => {
-                  const productId = toId(r?.product);
-                  const productName = toName(r?.product, productsById, "product_name");
-                  const productLabel = productName ? `${productName}(${productId})` : productId;
-
-                  const eggLotId = toId(r?.egg_lot);
-                  const eggLotReceiving = ymd(eggLotsById?.[eggLotId]?.receiving_date);
-                  const eggLotLabel = eggLotReceiving ? `${eggLotId} (${eggLotReceiving})` : eggLotId;
+                  const product =
+                    productsByPk[toPk(r?.product)] ||
+                    (typeof r?.product === "object" ? r.product : null);
+                  const eggLot =
+                    eggLotsByPk[toPk(r?.egg_lot)] ||
+                    (typeof r?.egg_lot === "object" ? r.egg_lot : null);
 
                   return (
-                    <tr key={r.id}>
-                      <td>{r.id}</td>
-                      <td className="wrap-cell">{productLabel}</td>
-                      <td className="wrap-cell">{eggLotLabel}</td>
-                      <td>{r.quantity}</td>
-                      <td className="wrap-cell">{asText(r.location)}</td>
-                      <td className="wrap-cell">{asText(r.memo)}</td>
-                      <td>
-                        <span className={`badge ${r.is_active ? "ok" : "no"}`}>{r.is_active ? "유" : "무"}</span>
-                      </td>
+                    <tr key={r.id ?? getIdentifierLabel(r, ["ProductLot_no", "product_lot_id"], ["id"])}>
+                      <td>{getIdentifierLabel(r, ["ProductLot_no", "product_lot_id"], ["id"])}</td>
+                      <td className="wrap-cell">{productLabel(product || { product_no: toPk(r?.product) })}</td>
+                      <td className="wrap-cell">{eggLotLabel(eggLot || { Egglot_no: toPk(r?.egg_lot) })}</td>
+                      <td>{asText(r?.quantity)}</td>
+                      <td className="wrap-cell">{asText(r?.location)}</td>
+                      <td>{ymd(r?.process_day)}</td>
+                      <td>{asText(r?.machine_line)}</td>
+                      <td className="wrap-cell">{asText(r?.memo)}</td>
                       <td className="actions-cell">
                         <div className="row-actions">
-                          <button className="btn small secondary" type="button" onClick={() => openEdit(r)}>
-                            수정
-                          </button>
-                          <button className="btn small danger" type="button" onClick={() => onDelete(r)}>
-                            삭제
-                          </button>
+                          <button className="btn small secondary" type="button" onClick={() => openEdit(r)}>수정</button>
+                          <button className="btn small danger" type="button" onClick={() => onDelete(r)}>삭제</button>
                         </div>
                       </td>
                     </tr>
@@ -481,9 +474,6 @@ export default function GoodsInventory() {
           <div className="modal" onClick={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3 className="modal-title">{editing ? "제품재고 수정" : "제품재고 추가"}</h3>
-              <button className="btn secondary small" type="button" onClick={closeModal}>
-                닫기
-              </button>
             </div>
 
             <form onSubmit={onSubmit}>
@@ -496,22 +486,18 @@ export default function GoodsInventory() {
                     <select className="filter-select" value={form.product} onChange={(e) => setForm((p) => ({ ...p, product: e.target.value }))}>
                       <option value="">선택</option>
                       {(products || []).map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.product_name}({p.id})
-                        </option>
+                        <option key={toPk(p)} value={toPk(p)}>{productLabel(p)}</option>
                       ))}
                     </select>
                     {fieldErrs.product && <div className="field-error">{fieldErrs.product}</div>}
                   </div>
 
                   <div className="field">
-                    <div className="filter-label">계란재고</div>
+                    <div className="filter-label">계란식별자</div>
                     <select className="filter-select" value={form.egg_lot} onChange={(e) => setForm((p) => ({ ...p, egg_lot: e.target.value }))}>
                       <option value="">선택</option>
                       {(eggLots || []).map((l) => (
-                        <option key={l.id} value={l.id}>
-                          {l.id} / {ymd(l.receiving_date)} / {asText(l.egg_weight)} / {l.quantity}개
-                        </option>
+                        <option key={toPk(l)} value={toPk(l)}>{eggLotLabel(l)}</option>
                       ))}
                     </select>
                     {fieldErrs.egg_lot && <div className="field-error">{fieldErrs.egg_lot}</div>}
@@ -529,27 +515,46 @@ export default function GoodsInventory() {
                     {fieldErrs.location && <div className="field-error">{fieldErrs.location}</div>}
                   </div>
 
+                  <div className="field">
+                    <div className="filter-label">공정일</div>
+                    <input
+                      className="filter-input"
+                      type="date"
+                      value={form.process_day}
+                      onChange={(e) => setForm((p) => ({ ...p, process_day: e.target.value }))}
+                    />
+                  </div>
+
+                  <div className="field">
+                    <div className="filter-label">라인</div>
+                    <input className="filter-input" value={form.machine_line} onChange={(e) => setForm((p) => ({ ...p, machine_line: e.target.value }))} placeholder="예: LINE-1" />
+                  </div>
+
                   <div className="field" style={{ gridColumn: "1 / -1" }}>
                     <div className="filter-label">메모</div>
                     <textarea className="filter-input" rows={4} value={form.memo} onChange={(e) => setForm((p) => ({ ...p, memo: e.target.value }))} />
                   </div>
 
-                  <div className="field">
-                    <div className="filter-label">인증/여부</div>
-                    <label className="checkbox" style={{ marginTop: "var(--sp-6)" }}>
-                      <input type="checkbox" checked={form.is_active} onChange={(e) => setForm((p) => ({ ...p, is_active: e.target.checked }))} />
-                      <span>활성여부</span>
-                    </label>
-                  </div>
+                  {editing?.id != null && (
+                    <div className="field" style={{ gridColumn: "1 / -1" }}>
+                      <div className="filter-label">변경내역 메모</div>
+                      <textarea
+                        className="filter-input"
+                        rows={4}
+                        value={form.history_memo}
+                        onChange={(e) => setForm((p) => ({ ...p, history_memo: e.target.value }))}
+                        placeholder="변경 사유를 입력하세요"
+                      />
+                      {fieldErrs.history_memo && <div className="field-error">{fieldErrs.history_memo}</div>}
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="modal-foot">
-                <button className="btn secondary" type="button" onClick={closeModal} disabled={submitting}>
-                  취소
-                </button>
+                <button className="btn secondary" type="button" onClick={closeModal} disabled={submitting}>취소</button>
                 <button className="btn" type="submit" disabled={submitting}>
-                  {submitting ? "저장 중..." : "저장"}
+                  {submitting ? "저장중.." : "저장"}
                 </button>
               </div>
             </form>

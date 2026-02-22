@@ -1,137 +1,149 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { listCustomers, createCustomer, patchCustomer, deleteCustomer, listFarms } from "../../services/accountingApi";
-import { includesText, includesAnyTokens, farmsToText, parseDRFErrors } from "../../utils/helpers";
+import {
+  createCustomer,
+  deleteCustomer,
+  listCustomers,
+  listFarms,
+  patchCustomer,
+} from "../../services/accountingApi";
+import {
+  getApiErrorMessage,
+  getIdentifierLabel,
+  includesText,
+  parseDRFErrors,
+  toStringArray,
+} from "../../utils/helpers";
 import { downloadCustomerListXlsx } from "../../utils/excel";
 import "./AccountingTable.css";
 import SearchBar from "../../components/common/SearchBar";
 import Pagination from "../../components/common/Pagination";
 
+function toPk(v) {
+  if (v == null) return "";
+  if (typeof v === "object") return String(v.id ?? v.pk ?? "");
+  return String(v);
+}
+
+function toFarmPkList(v) {
+  if (!Array.isArray(v)) return [];
+  return v
+    .map((farm) => {
+      if (farm == null) return "";
+      if (typeof farm === "object") return toPk(farm);
+      return String(farm);
+    })
+    .filter(Boolean);
+}
+
+function toFarmLabel(farm) {
+  const id = getIdentifierLabel(farm, ["farm_id"], ["id"]);
+  const name = String(farm?.farm_name || "").trim();
+  if (name && id) return `${name} (${id})`;
+  return name || id || "-";
+}
+
+function toFarmFilterLabel(farm) {
+  const name = String(farm?.farm_name || "").trim();
+  if (name) return name;
+  return getIdentifierLabel(farm, ["farm_id"], ["id"]) || "-";
+}
+
+function toCustomerLabel(customer) {
+  const code = getIdentifierLabel(customer, ["customer_code", "customer_id"], []);
+  const name = String(customer?.customer_name || "").trim();
+  if (name && code) return `${name} (${code})`;
+  return name || code || "-";
+}
+
+function toFilterNumber(value) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
 
 export default function CustomerInfo() {
   const [rows, setRows] = useState([]);
+  const [farms, setFarms] = useState([]);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState("");
 
-  // CRUD
-  const [farms, setFarms] = useState([]);
-  const [farmSearch, setFarmSearch] = useState("");
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [submitting, setSubmitting] = useState(false);
   const [formErr, setFormErr] = useState("");
   const [fieldErrs, setFieldErrs] = useState({});
   const [form, setForm] = useState({
+    customer_code: "",
     customer_name: "",
-    available_farms: [], // ids
+    client_text: "",
+    available_farms: [],
     max_laying_days: "",
     expiration_date: "",
   });
 
-  // 상단 검색
   const [searchField, setSearchField] = useState("all");
   const [searchText, setSearchText] = useState("");
 
-  // Pagination
+  const [fFarmPk, setFFarmPk] = useState("");
+  const [fMaxLayingDaysMin, setFMaxLayingDaysMin] = useState("");
+  const [fMaxLayingDaysMax, setFMaxLayingDaysMax] = useState("");
+  const [fExpirationDateMin, setFExpirationDateMin] = useState("");
+  const [fExpirationDateMax, setFExpirationDateMax] = useState("");
+
   const [page, setPage] = useState(1);
   const pageSize = 10;
-
-  
-
   const SEARCH_FIELDS = [
     { value: "all", label: "전체" },
+    { value: "customer_code", label: "고객사코드" },
     { value: "customer_name", label: "고객사명" },
-    // 고객사 ID 검색은 불필요 → 고객사에 연결된 농장 ID로 검색
-    { value: "available_farms", label: "농장ID" },
+    { value: "client", label: "납품처" },
+    { value: "farm", label: "사용농장" },
   ];
-// 좌측 필터
-  const [fCustomerName, setFCustomerName] = useState("");
-  const [fFarmKeyword, setFFarmKeyword] = useState("");
-  const [fMaxLayingMin, setFMaxLayingMin] = useState("");
-  const [fMaxLayingMax, setFMaxLayingMax] = useState("");
-  const [fExpMin, setFExpMin] = useState("");
-  const [fExpMax, setFExpMax] = useState("");
 
-  const fetchRows = async () => {
+  const farmsByPk = useMemo(() => {
+    const m = {};
+    (farms || []).forEach((f) => {
+      const pk = toPk(f);
+      if (pk) m[pk] = f;
+    });
+    return m;
+  }, [farms]);
+
+  async function fetchRows() {
     setLoading(true);
     setErr("");
     try {
-      const data = await listCustomers();
-      setRows(data);
+      const [customersData, farmsData] = await Promise.all([listCustomers(), listFarms()]);
+      setRows(customersData);
+      setFarms(farmsData);
     } catch (e) {
-      setErr(e?.response?.data?.detail || "고객사 목록을 불러오지 못했습니다.");
+      setErr(getApiErrorMessage(e, "고객사 목록을 불러오지 못했습니다."));
     } finally {
       setLoading(false);
     }
-  };
+  }
 
+  useEffect(() => {
+    fetchRows();
+  }, []);
 
-  // ✅ 검색 클릭/엔터 시마다 서버에서 다시 목록 갱신
   const onSearch = async () => {
     await fetchRows();
   };
-
-  const fetchFarms = async () => {
-    try {
-      const data = await listFarms();
-      setFarms(data);
-    } catch {
-      // farms 목록은 보조데이터라 실패해도 페이지는 동작
-    }
-  };
-
-
-
-  const farmsById = useMemo(() => {
-    const map = {};
-    (farms || []).forEach((f) => {
-      const id = f?.id;
-      if (id !== null && id !== undefined) map[String(id)] = f;
-    });
-    return map;
-  }, [farms]);
-
-  const filteredFarmOptions = useMemo(() => {
-    const q = farmSearch.trim();
-    if (!q) return farms || [];
-    // 공백으로 나뉜 키워드 중 하나라도 포함되면 노출(OR)
-    return (farms || []).filter((f) => includesAnyTokens(`${f?.farm_name ?? ""} ${f?.id ?? ""}`, q));
-  }, [farms, farmSearch]);
-  useEffect(() => {
-    fetchRows();
-    fetchFarms();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  function farmsToIds(v) {
-    if (!v) return [];
-    if (!Array.isArray(v)) return [];
-    return v
-      .map((f) => {
-        if (typeof f === "number") return f;
-        if (typeof f === "string") return Number.isFinite(Number(f)) ? Number(f) : null;
-        if (typeof f === "object") return f.id ?? null;
-        return null;
-      })
-      .filter((x) => x != null);
-  }
-
-  function onExcelExport() {
-    const body = filtered.map((r) => [
-      r?.id ?? "",
-      r?.customer_name ?? "",
-      farmsToIds(r?.available_farms).join(","),
-      r?.max_laying_days ?? "",
-      r?.expiration_date ?? "",
-    ]);
-
-    downloadCustomerListXlsx(body);
-  }
 
   function openCreate() {
     setEditing(null);
     setFormErr("");
     setFieldErrs({});
-    setForm({ customer_name: "", available_farms: [], max_laying_days: "", expiration_date: "" });
+    setForm({
+      customer_code: "",
+      customer_name: "",
+      client_text: "",
+      available_farms: [],
+      max_laying_days: "",
+      expiration_date: "",
+    });
     setModalOpen(true);
   }
 
@@ -140,10 +152,12 @@ export default function CustomerInfo() {
     setFormErr("");
     setFieldErrs({});
     setForm({
-      customer_name: row?.customer_name ?? "",
-      available_farms: farmsToIds(row?.available_farms),
-      max_laying_days: row?.max_laying_days ?? "",
-      expiration_date: row?.expiration_date ?? "",
+      customer_code: String(row?.customer_code || ""),
+      customer_name: String(row?.customer_name || ""),
+      client_text: toStringArray(row?.client).join(", "),
+      available_farms: toFarmPkList(row?.available_farms),
+      max_laying_days: row?.max_laying_days == null ? "" : String(row.max_laying_days),
+      expiration_date: row?.expiration_date == null ? "" : String(row.expiration_date),
     });
     setModalOpen(true);
   }
@@ -153,7 +167,6 @@ export default function CustomerInfo() {
     setModalOpen(false);
   }, [submitting]);
 
-  // ✅ ESC로 팝업 닫기
   useEffect(() => {
     if (!modalOpen) return;
     const onKeyDown = (e) => {
@@ -171,29 +184,29 @@ export default function CustomerInfo() {
 
     try {
       const payload = {
-        customer_name: form.customer_name,
-        available_farms: form.available_farms,
+        customer_code: String(form.customer_code || "").trim(),
+        customer_name: String(form.customer_name || "").trim(),
+        client: toStringArray(form.client_text),
+        available_farms: (form.available_farms || [])
+          .map((pk) => Number(pk))
+          .filter((v) => Number.isFinite(v)),
         max_laying_days: Number(form.max_laying_days),
         expiration_date: Number(form.expiration_date),
       };
-      if (!payload.customer_name?.trim()) {
-        setFieldErrs({ customer_name: "고객사명을 입력해주세요." });
-        return;
-      }
-      if (!Number.isFinite(payload.max_laying_days)) {
-        setFieldErrs({ max_laying_days: "납고가능 일수를 숫자로 입력해주세요." });
-        return;
-      }
-      if (!Number.isFinite(payload.expiration_date)) {
-        setFieldErrs({ expiration_date: "유통기한을 숫자로 입력해주세요." });
+
+      const nextErrs = {};
+      if (!payload.customer_code) nextErrs.customer_code = "고객사코드를 입력해주세요.";
+      if (!payload.customer_name) nextErrs.customer_name = "고객사명을 입력해주세요.";
+      if (!Number.isFinite(payload.max_laying_days)) nextErrs.max_laying_days = "최대 산란일수는 숫자여야 합니다.";
+      if (!Number.isFinite(payload.expiration_date)) nextErrs.expiration_date = "유통기한은 숫자여야 합니다.";
+      if (Object.keys(nextErrs).length) {
+        setFieldErrs(nextErrs);
         return;
       }
 
-      if (editing?.id != null) {
-        await patchCustomer(editing.id, payload);
-      } else {
-        await createCustomer(payload);
-      }
+      if (editing?.id != null) await patchCustomer(editing.id, payload);
+      else await createCustomer(payload);
+
       setModalOpen(false);
       await fetchRows();
     } catch (e2) {
@@ -206,74 +219,70 @@ export default function CustomerInfo() {
   }
 
   async function onDelete(row) {
-    const ok = window.confirm(`'${row?.customer_name ?? ""}' 고객사를 삭제할까요?`);
+    const ok = window.confirm(`'${toCustomerLabel(row)}' 고객사를 삭제할까요?`);
     if (!ok) return;
     try {
       await deleteCustomer(row.id);
       setRows((prev) => prev.filter((r) => r?.id !== row.id));
     } catch (e) {
-      alert(e?.response?.data?.detail || "삭제에 실패했습니다.");
+      window.alert(getApiErrorMessage(e, "삭제에 실패했습니다."));
     }
   }
 
   const filtered = useMemo(() => {
     const q = searchText.trim();
+    const maxLayingMin = toFilterNumber(fMaxLayingDaysMin);
+    const maxLayingMax = toFilterNumber(fMaxLayingDaysMax);
+    const expirationMin = toFilterNumber(fExpirationDateMin);
+    const expirationMax = toFilterNumber(fExpirationDateMax);
 
-    const minLay = fMaxLayingMin === "" ? null : Number(fMaxLayingMin);
-    const maxLay = fMaxLayingMax === "" ? null : Number(fMaxLayingMax);
-    const minExp = fExpMin === "" ? null : Number(fExpMin);
-    const maxExp = fExpMax === "" ? null : Number(fExpMax);
+    return (rows || []).filter((r) => {
+      const customerCode = String(r?.customer_code || r?.customer_id || "");
+      const customerName = String(r?.customer_name || "");
+      const clients = toStringArray(r?.client).join(", ");
+      const farmPks = toFarmPkList(r?.available_farms);
+      const farmLabels = farmPks
+        .map((pk) => toFarmLabel(farmsByPk[pk] || { farm_id: pk }))
+        .join(", ");
+      const maxLayingDaysValue = Number(r?.max_laying_days);
+      const expirationDateValue = Number(r?.expiration_date);
 
-    return rows.filter((r) => {
-      const farmsText = farmsToText(r.available_farms, farmsById);
+      if (fFarmPk && !farmPks.includes(fFarmPk)) return false;
+      if (maxLayingMin != null && (!Number.isFinite(maxLayingDaysValue) || maxLayingDaysValue < maxLayingMin)) return false;
+      if (maxLayingMax != null && (!Number.isFinite(maxLayingDaysValue) || maxLayingDaysValue > maxLayingMax)) return false;
+      if (expirationMin != null && (!Number.isFinite(expirationDateValue) || expirationDateValue < expirationMin)) return false;
+      if (expirationMax != null && (!Number.isFinite(expirationDateValue) || expirationDateValue > expirationMax)) return false;
 
-      // 좌측 필터
-      if (fCustomerName && !includesText(r.customer_name, fCustomerName)) return false;
-      // 공백 키워드 OR 검색
-      if (fFarmKeyword && !includesAnyTokens(farmsText, fFarmKeyword)) return false;
-
-      const lay = Number(r.max_laying_days);
-      const exp = Number(r.expiration_date);
-      if (minLay !== null && !(lay >= minLay)) return false;
-      if (maxLay !== null && !(lay <= maxLay)) return false;
-      if (minExp !== null && !(exp >= minExp)) return false;
-      if (maxExp !== null && !(exp <= maxExp)) return false;
-
-      // 상단 검색
       if (!q) return true;
-      if (searchField === "all") {
-        return (
-          includesText(r.customer_name, q) ||
-          includesText(farmsText, q) ||
-          includesText(r.max_laying_days, q) ||
-          includesText(r.expiration_date, q)
-        );
-      }
-      if (searchField === "available_farms") return includesText(farmsText, q);
-      return includesText(r[searchField], q);
+      if (searchField === "customer_code") return includesText(customerCode, q);
+      if (searchField === "customer_name") return includesText(customerName, q);
+      if (searchField === "client") return includesText(clients, q);
+      if (searchField === "farm") return includesText(farmLabels, q);
+
+      return (
+        includesText(customerCode, q) ||
+        includesText(customerName, q) ||
+        includesText(clients, q) ||
+        includesText(farmLabels, q)
+      );
     });
   }, [
     rows,
-    farmsById,
     searchField,
     searchText,
-    fCustomerName,
-    fFarmKeyword,
-    fMaxLayingMin,
-    fMaxLayingMax,
-    fExpMin,
-    fExpMax,
+    farmsByPk,
+    fFarmPk,
+    fMaxLayingDaysMin,
+    fMaxLayingDaysMax,
+    fExpirationDateMin,
+    fExpirationDateMax,
   ]);
 
-  // 필터/검색이 바뀌면 첫 페이지로
   useEffect(() => {
     setPage(1);
-  }, [searchField, searchText, fCustomerName, fFarmKeyword, fMaxLayingMin, fMaxLayingMax, fExpMin, fExpMax]);
+  }, [searchField, searchText, fFarmPk, fMaxLayingDaysMin, fMaxLayingDaysMax, fExpirationDateMin, fExpirationDateMax]);
 
-  const pageCount = useMemo(() => {
-    return Math.max(1, Math.ceil(filtered.length / pageSize));
-  }, [filtered.length]);
-
+  const pageCount = useMemo(() => Math.max(1, Math.ceil(filtered.length / pageSize)), [filtered.length]);
   useEffect(() => {
     setPage((p) => Math.min(Math.max(1, p), pageCount));
   }, [pageCount]);
@@ -283,66 +292,95 @@ export default function CustomerInfo() {
     return filtered.slice(start, start + pageSize);
   }, [filtered, page]);
 
-  function resetFilters() {
-    setSearchField("all");
-    setSearchText("");
-    setFCustomerName("");
-    setFFarmKeyword("");
-    setFMaxLayingMin("");
-    setFMaxLayingMax("");
-    setFExpMin("");
-    setFExpMax("");
+  function onExcelExport() {
+    const body = filtered.map((r) => [
+      r?.customer_code ?? "",
+      r?.customer_name ?? "",
+      toStringArray(r?.client).join(","),
+      toFarmPkList(r?.available_farms)
+        .map((pk) => {
+          const farm = farmsByPk[pk];
+          return farm ? getIdentifierLabel(farm, ["farm_id"], ["id"]) : pk;
+        })
+        .join(","),
+      r?.max_laying_days ?? "",
+      r?.expiration_date ?? "",
+    ]);
+    downloadCustomerListXlsx(body);
+  }
+
+  function toggleFarmPk(pk) {
+    setForm((prev) => {
+      const set = new Set(prev.available_farms || []);
+      if (set.has(pk)) set.delete(pk);
+      else set.add(pk);
+      return { ...prev, available_farms: Array.from(set) };
+    });
   }
 
   return (
-    <div className="accounting-page">
+    <div className="accounting-page customer-info-page">
       <aside className="filters-card">
         <div className="filters-title">필터</div>
-
         <div className="filter-group">
-          <div className="filter-label">고객사명</div>
-          <input className="filter-input" value={fCustomerName} onChange={(e) => setFCustomerName(e.target.value)} placeholder="고객사명" />
+          <div className="filter-label">사용농장</div>
+          <select className="filter-select" value={fFarmPk} onChange={(e) => setFFarmPk(e.target.value)}>
+            <option value="">전체</option>
+            {(farms || []).map((f) => (
+              <option key={toPk(f)} value={toPk(f)}>
+                {toFarmFilterLabel(f)}
+              </option>
+            ))}
+          </select>
         </div>
 
         <div className="filter-group">
-          <div className="filter-label">사용가능 농장(키워드 검색)</div>
-          <input className="filter-input" value={fFarmKeyword} onChange={(e) => setFFarmKeyword(e.target.value)} placeholder="농장명(ID)" />
-        </div>
-
-        <div className="filter-group">
-          <div className="filter-label">납고가능 일수</div>
-          <div style={{ display: "flex", gap: "var(--sp-8)" }}>
-            <input className="filter-input" value={fMaxLayingMin} onChange={(e) => setFMaxLayingMin(e.target.value)} placeholder="min" inputMode="numeric" />
-            <input className="filter-input" value={fMaxLayingMax} onChange={(e) => setFMaxLayingMax(e.target.value)} placeholder="max" inputMode="numeric" />
+          <div className="filter-label">최대산란일수</div>
+          <div className="field-row range-row">
+            <input
+              className="filter-input"
+              inputMode="numeric"
+              placeholder="최소"
+              value={fMaxLayingDaysMin}
+              onChange={(e) => setFMaxLayingDaysMin(e.target.value)}
+            />
+            <input
+              className="filter-input"
+              inputMode="numeric"
+              placeholder="최대"
+              value={fMaxLayingDaysMax}
+              onChange={(e) => setFMaxLayingDaysMax(e.target.value)}
+            />
           </div>
         </div>
 
         <div className="filter-group">
           <div className="filter-label">유통기한</div>
-          <div style={{ display: "flex", gap: "var(--sp-8)" }}>
-            <input className="filter-input" value={fExpMin} onChange={(e) => setFExpMin(e.target.value)} placeholder="min" inputMode="numeric" />
-            <input className="filter-input" value={fExpMax} onChange={(e) => setFExpMax(e.target.value)} placeholder="max" inputMode="numeric" />
+          <div className="field-row range-row">
+            <input
+              className="filter-input"
+              inputMode="numeric"
+              placeholder="최소"
+              value={fExpirationDateMin}
+              onChange={(e) => setFExpirationDateMin(e.target.value)}
+            />
+            <input
+              className="filter-input"
+              inputMode="numeric"
+              placeholder="최대"
+              value={fExpirationDateMax}
+              onChange={(e) => setFExpirationDateMax(e.target.value)}
+            />
           </div>
         </div>
-
-        <button className="btn secondary" onClick={resetFilters} style={{ width: "100%" }}>
-          필터 초기화
-        </button>
       </aside>
 
       <section className="page-main">
         <div className="page-head">
-          <h2 className="page-title">고객사정보</h2>
-
+          <h2 className="page-title">고객사 정보</h2>
           <div className="head-actions">
-            <button className="btn secondary" onClick={openCreate}>
-              + 고객사 추가
-            </button>
-
-            <button className="btn secondary" onClick={onExcelExport}>
-              엑셀 출력
-            </button>
-
+            <button className="btn secondary" onClick={openCreate}>+ 고객사 추가</button>
+            <button className="btn secondary" onClick={onExcelExport}>엑셀 출력</button>
             <SearchBar
               field={searchField}
               setField={setSearchField}
@@ -356,42 +394,42 @@ export default function CustomerInfo() {
         </div>
 
         <div className="muted" style={{ marginBottom: "var(--sp-10)" }}>
-          {loading ? "불러오는 중..." : err ? err : `총 ${filtered.length}건`}
+          {loading ? "불러오는 중.." : err ? err : `총 ${filtered.length}건`}
         </div>
 
         <div className="table-wrap">
           <table className="data-table">
-            {/* ✅ '사용가능 농장' 컬럼만 더 넓게 (기존 디자인/스타일은 그대로) */}
-            <colgroup>
-              <col style={{ width: "clamp(170px, calc(220 * var(--ui)), 260px)" }} />
-              <col style={{ width: "clamp(260px, calc(420 * var(--ui)), 520px)" }} />
-              <col style={{ width: "clamp(120px, calc(150 * var(--ui)), 200px)" }} />
-              <col style={{ width: "clamp(120px, calc(150 * var(--ui)), 200px)" }} />
-              <col style={{ width: "clamp(130px, calc(160 * var(--ui)), 220px)" }} />
-            </colgroup>
             <thead>
               <tr>
+                <th>고객사코드</th>
                 <th>고객사명</th>
-                <th>사용가능 농장</th>
-                <th>납고가능 일수</th>
+                <th>납품처</th>
+                <th>사용농장</th>
+                <th>최대산란일수</th>
                 <th>유통기한</th>
                 <th style={{ textAlign: "center" }}>관리</th>
               </tr>
             </thead>
             <tbody>
-              {!loading && filtered.length === 0 ? (
+              {!loading && !pagedRows.length ? (
                 <tr>
-                  <td colSpan={5} className="muted" style={{ padding: "var(--sp-18)" }}>
+                  <td colSpan={7} className="muted" style={{ padding: "var(--sp-18)" }}>
                     결과가 없습니다.
                   </td>
                 </tr>
               ) : (
                 pagedRows.map((r) => (
-                  <tr key={r.id ?? r.customer_name}>
-                    <td className="wrap-cell">{r.customer_name}</td>
-                    <td className="wrap-cell">{farmsToText(r.available_farms, farmsById) || "-"}</td>
-                    <td>{r.max_laying_days}</td>
-                    <td>{r.expiration_date}</td>
+                  <tr key={r.id ?? `${r.customer_code}-${r.customer_name}`}>
+                    <td>{getIdentifierLabel(r, ["customer_code", "customer_id"], ["id"])}</td>
+                    <td className="wrap-cell">{r.customer_name || "-"}</td>
+                    <td className="wrap-cell">{toStringArray(r.client).join(", ") || "-"}</td>
+                    <td className="wrap-cell">
+                      {toFarmPkList(r.available_farms)
+                        .map((pk) => toFarmLabel(farmsByPk[pk] || { farm_id: pk }))
+                        .join(", ") || "-"}
+                    </td>
+                    <td>{r.max_laying_days ?? "-"}</td>
+                    <td>{r.expiration_date ?? "-"}</td>
                     <td style={{ textAlign: "center" }}>
                       <span className="row-actions actions-center">
                         <button className="btn small secondary" onClick={() => openEdit(r)}>수정</button>
@@ -413,108 +451,50 @@ export default function CustomerInfo() {
           <div className="modal" onMouseDown={(e) => e.stopPropagation()}>
             <div className="modal-head">
               <h3 className="modal-title">{editing ? "고객사 수정" : "고객사 추가"}</h3>
-              <button className="btn small secondary" onClick={closeModal}>닫기</button>
             </div>
 
             <form onSubmit={onSubmit}>
               <div className="modal-body">
                 {formErr && <div className="field-error" style={{ marginBottom: "var(--sp-10)" }}>{formErr}</div>}
-
                 <div className="modal-grid">
                   <div className="field">
-                    <div className="filter-label">고객사명 </div>
+                    <div className="filter-label">고객사코드</div>
+                    <input
+                      className="filter-input"
+                      value={form.customer_code}
+                      onChange={(e) => setForm((prev) => ({ ...prev, customer_code: e.target.value }))}
+                    />
+                    {fieldErrs.customer_code && <div className="field-error">{fieldErrs.customer_code}</div>}
+                  </div>
+
+                  <div className="field">
+                    <div className="filter-label">고객사명</div>
                     <input
                       className="filter-input"
                       value={form.customer_name}
-                      onChange={(e) => {
-                        setForm((p) => ({ ...p, customer_name: e.target.value }));
-                        setFieldErrs((p) => ({ ...p, customer_name: "" }));
-                      }}
-                      placeholder="고객사명"
+                      onChange={(e) => setForm((prev) => ({ ...prev, customer_name: e.target.value }))}
                     />
                     {fieldErrs.customer_name && <div className="field-error">{fieldErrs.customer_name}</div>}
                   </div>
 
-                  <div className="field">
-                    <div className="filter-label">사용가능 농장</div>
-
-                    <input
+                  <div className="field" style={{ gridColumn: "1 / -1" }}>
+                    <div className="filter-label">납품처 (쉼표 구분)</div>
+                    <textarea
                       className="filter-input"
-                      value={farmSearch}
-                      onChange={(e) => setFarmSearch(e.target.value)}
-                      placeholder="농장 검색 (농장명과 ID를 띄어쓰기로 키워드 검색)"
+                      rows={3}
+                      value={form.client_text}
+                      onChange={(e) => setForm((prev) => ({ ...prev, client_text: e.target.value }))}
+                      placeholder="예: 납품처A, 납품처B"
                     />
-
-                    <div className="farm-pick-list">
-                      {filteredFarmOptions.length === 0 ? (
-                        <div className="muted" style={{ padding: "var(--sp-8)" }}>검색 결과가 없습니다.</div>
-                      ) : (
-                        filteredFarmOptions.map((f) => {
-                          const checked = form.available_farms.includes(Number(f.id));
-                          return (
-                            <label key={f.id} className="farm-pick-item">
-                              <input
-                                type="checkbox"
-                                checked={checked}
-                                onChange={() => {
-                                  const id = Number(f.id);
-                                  setForm((p) => {
-                                    const next = new Set(p.available_farms || []);
-                                    if (next.has(id)) next.delete(id);
-                                    else next.add(id);
-                                    return { ...p, available_farms: Array.from(next) };
-                                  });
-                                  setFieldErrs((p) => ({ ...p, available_farms: "" }));
-                                }}
-                              />
-                              <span>{(f.farm_name ?? "-") + `(${f.id})`}</span>
-                            </label>
-                          );
-                        })
-                      )}
-                    </div>
-
-                    <div className="field-help" style={{ marginTop: "var(--sp-8)" }}>선택된 농장</div>
-                    <div className="farm-selected">
-                      {(form.available_farms || []).length === 0 ? (
-                        <span className="muted">선택 없음</span>
-                      ) : (
-                        (form.available_farms || [])
-                          .map((id) => farmsById[String(id)] || { id, farm_name: String(id) })
-                          .map((f) => (
-                            <span key={f.id} className="farm-chip">
-                              {(f.farm_name ?? "-") + `(${f.id})`}
-                              <button
-                                type="button"
-                                className="farm-chip-x"
-                                onClick={() => {
-                                  const id = Number(f.id);
-                                  setForm((p) => ({ ...p, available_farms: (p.available_farms || []).filter((x) => Number(x) !== id) }));
-                                  setFieldErrs((p) => ({ ...p, available_farms: "" }));
-                                }}
-                                aria-label="remove"
-                              >
-                                ×
-                              </button>
-                            </span>
-                          ))
-                      )}
-                    </div>
-
-                    {fieldErrs.available_farms && <div className="field-error">{fieldErrs.available_farms}</div>}
                   </div>
 
                   <div className="field">
-                    <div className="filter-label">납고가능 일수 </div>
+                    <div className="filter-label">최대산란일수</div>
                     <input
                       className="filter-input"
-                      value={form.max_laying_days}
-                      onChange={(e) => {
-                        setForm((p) => ({ ...p, max_laying_days: e.target.value }));
-                        setFieldErrs((p) => ({ ...p, max_laying_days: "" }));
-                      }}
-                      placeholder="예: 7"
                       inputMode="numeric"
+                      value={form.max_laying_days}
+                      onChange={(e) => setForm((prev) => ({ ...prev, max_laying_days: e.target.value }))}
                     />
                     {fieldErrs.max_laying_days && <div className="field-error">{fieldErrs.max_laying_days}</div>}
                   </div>
@@ -523,15 +503,31 @@ export default function CustomerInfo() {
                     <div className="filter-label">유통기한</div>
                     <input
                       className="filter-input"
-                      value={form.expiration_date}
-                      onChange={(e) => {
-                        setForm((p) => ({ ...p, expiration_date: e.target.value }));
-                        setFieldErrs((p) => ({ ...p, expiration_date: "" }));
-                      }}
-                      placeholder="예: 14"
                       inputMode="numeric"
+                      value={form.expiration_date}
+                      onChange={(e) => setForm((prev) => ({ ...prev, expiration_date: e.target.value }))}
                     />
                     {fieldErrs.expiration_date && <div className="field-error">{fieldErrs.expiration_date}</div>}
+                  </div>
+
+                  <div className="field" style={{ gridColumn: "1 / -1" }}>
+                    <div className="filter-label">사용농장</div>
+                    <div className="farm-pick-list">
+                      {(farms || []).map((f) => {
+                        const pk = toPk(f);
+                        const checked = (form.available_farms || []).includes(pk);
+                        return (
+                          <label key={pk} className="farm-pick-item">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() => toggleFarmPk(pk)}
+                            />
+                            <span>{toFarmLabel(f)}</span>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -541,7 +537,7 @@ export default function CustomerInfo() {
                   취소
                 </button>
                 <button type="submit" className="btn" disabled={submitting}>
-                  {submitting ? "저장 중..." : "저장"}
+                  {submitting ? "저장중.." : "저장"}
                 </button>
               </div>
             </form>

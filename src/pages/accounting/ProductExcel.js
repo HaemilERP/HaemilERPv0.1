@@ -1,12 +1,27 @@
 import { useMemo, useState } from "react";
-import { createProduct, patchProduct } from "../../services/accountingApi";
+import {
+  createProduct,
+  listCustomers,
+  listProducts,
+  patchProduct,
+} from "../../services/accountingApi";
 import { getApiErrorMessage } from "../../utils/apiError";
 import {
   downloadProductTemplate,
-  readFirstSheetAOA,
   parseProductAOA,
+  readFirstSheetAOA,
 } from "../../utils/excel";
+import { normalizeFarmType } from "../../utils/helpers";
 import "./AccountingTable.css";
+
+function normalizeEggGrade(value) {
+  const v = String(value ?? "").trim();
+  if (!v || v === "무") return "무";
+  if (v === "1") return "1";
+  if (v === "1+") return "1+";
+  if (v === "기타") return "기타";
+  return "기타";
+}
 
 export default function ProductExcel() {
   const [file, setFile] = useState(null);
@@ -27,18 +42,17 @@ export default function ProductExcel() {
       return;
     }
     const aoa = await readFirstSheetAOA(f);
-    const p = parseProductAOA(aoa);
-    setParsed(p);
+    setParsed(parseProductAOA(aoa));
   }
 
   async function onUpload() {
     if (loading) return;
     if (!validRows.length) {
-      alert("업로드할 유효 데이터가 없습니다.");
+      window.alert("업로드할 유효 데이터가 없습니다.");
       return;
     }
 
-    const ok = window.confirm(`총 ${validRows.length}건을 업로드할까요? (오류 행: ${invalidRows.length}건)`);
+    const ok = window.confirm(`총 ${validRows.length}건을 업로드할까요? (오류 ${invalidRows.length}건)`);
     if (!ok) return;
 
     setLoading(true);
@@ -49,27 +63,52 @@ export default function ProductExcel() {
     let success = 0;
     let fail = 0;
 
+    let customerMap = {};
+    let productMap = {};
+    try {
+      const [customers, products] = await Promise.all([listCustomers(), listProducts()]);
+      customerMap = (customers || []).reduce((acc, customer) => {
+        const key = String(customer?.customer_code || "").trim();
+        if (key) acc[key] = customer;
+        return acc;
+      }, {});
+      productMap = (products || []).reduce((acc, product) => {
+        const key = String(product?.product_no || "").trim();
+        if (key) acc[key] = product;
+        return acc;
+      }, {});
+    } catch {
+      customerMap = {};
+      productMap = {};
+    }
+
     for (let i = 0; i < validRows.length; i += 1) {
       const r = validRows[i];
       try {
+        const customer = customerMap[String(r.customer_code || "").trim()];
+        if (!customer?.id) {
+          throw new Error(`고객사코드를 찾을 수 없습니다: ${r.customer_code}`);
+        }
+
         const payload = {
+          product_no: String(r.product_no),
           product_name: r.product_name,
-          customer: Number(r.customer),
+          customer: Number(customer.id),
           egg_count: Number(r.egg_count),
-          breeding_number: Number(r.breeding_number),
-          farm_type: String(r.farm_type),
-          egg_grade: String(r.egg_grade),
+          breeding_number: Array.isArray(r.breeding_number) ? r.breeding_number : [],
+          farm_type: normalizeFarmType(r.farm_type),
+          egg_grade: normalizeEggGrade(r.egg_grade),
           egg_weight: String(r.egg_weight),
           process_type: String(r.process_type),
           ...(r.max_laying_days != null ? { max_laying_days: Number(r.max_laying_days) } : {}),
           ...(r.expiration_date != null ? { expiration_date: Number(r.expiration_date) } : {}),
-          antibiotic_free: Boolean(r.antibiotic_free),
-          haccp: Boolean(r.haccp),
-          organic: Boolean(r.organic),
-          ...(r.is_active !== undefined ? { is_active: Boolean(r.is_active) } : {}),
+          ...(r.antibiotic_free !== undefined ? { antibiotic_free: Boolean(r.antibiotic_free) } : {}),
+          ...(r.haccp !== undefined ? { haccp: Boolean(r.haccp) } : {}),
+          ...(r.organic !== undefined ? { organic: Boolean(r.organic) } : {}),
         };
 
-        if (r.id != null) await patchProduct(r.id, payload);
+        const existing = productMap[payload.product_no];
+        if (existing?.id != null) await patchProduct(existing.id, payload);
         else await createProduct(payload);
 
         success += 1;
@@ -90,7 +129,7 @@ export default function ProductExcel() {
     <div className="page-card">
       <h2>제품정보 엑셀입력</h2>
       <p style={{ color: "#64748b", marginTop: "var(--sp-6)" }}>
-        제품정보를 일괄로 등록/수정할 수 있습니다. ID 항목이 일치할 경우에 수정, 아닐 경우에 등록합니다.
+        제품식별자가 일치할 경우에 수정, 아닐 경우에 일괄로 등록합니다.
       </p>
 
       <div style={{ display: "flex", gap: "var(--sp-8)", flexWrap: "wrap", marginTop: "var(--sp-12)" }}>
@@ -114,14 +153,14 @@ export default function ProductExcel() {
 
         {file && (
           <span style={{ fontSize: "var(--fs-13)", color: "#475569", alignSelf: "center" }}>
-            선택됨: <b>{file.name}</b>
+            선택한 파일: <b>{file.name}</b>
           </span>
         )}
       </div>
 
       <div style={{ marginTop: "var(--sp-14)", color: "#64748b", fontSize: "var(--fs-13)" }}>
         {loading
-          ? `업로드 중... (${progress.done}/${progress.total})`
+          ? `업로드 중.. (${progress.done}/${progress.total})`
           : file
           ? `유효 ${validRows.length}건 / 오류 ${invalidRows.length}건`
           : "템플릿을 내려받아 작성 후 업로드하세요."}
@@ -129,7 +168,7 @@ export default function ProductExcel() {
 
       {!!invalidRows.length && (
         <div style={{ marginTop: "var(--sp-12)" }}>
-          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>오류 행</div>
+          <div style={{ fontWeight: 900, marginBottom: "var(--sp-6)" }}>오류 목록</div>
           <div
             style={{
               maxHeight: "clamp(140px, calc(180 * var(--ui)), 220px)",
@@ -159,31 +198,40 @@ export default function ProductExcel() {
               <thead>
                 <tr>
                   <th>Excel 행</th>
-                  <th>id</th>
+                  <th>제품식별자</th>
                   <th>제품명</th>
-                  <th>고객사ID</th>
+                  <th>고객사코드</th>
                   <th>계란수</th>
-                  <th>사육번호</th>
+                  <th>사육번호목록</th>
                   <th>농장유형</th>
-                  <th>등급</th>
-                  <th>난중</th>
-                  <th>가공</th>
+                  <th>계란등급</th>
+                  <th>중량</th>
+                  <th>계란유형</th>
+                  <th>최대산란일수</th>
+                  <th>유통기한</th>
+                  <th>무항생제</th>
+                  <th>HACCP</th>
+                  <th>유기농</th>
                 </tr>
               </thead>
               <tbody>
                 {validRows.map((r) => (
-                  <tr key={`${r.__rowNum}-${r.product_name}`}
-                  >
+                  <tr key={`${r.__rowNum}-${r.product_no}`}>
                     <td>{r.__rowNum}</td>
-                    <td>{r.id ?? ""}</td>
+                    <td>{r.product_no}</td>
                     <td className="wrap-cell">{r.product_name}</td>
-                    <td>{r.customer}</td>
+                    <td>{r.customer_code}</td>
                     <td>{r.egg_count}</td>
-                    <td>{r.breeding_number}</td>
-                    <td>{r.farm_type}</td>
+                    <td>{Array.isArray(r.breeding_number) ? r.breeding_number.join(", ") : ""}</td>
+                    <td>{normalizeFarmType(r?.farm_type)}</td>
                     <td>{r.egg_grade}</td>
                     <td>{r.egg_weight}</td>
                     <td>{r.process_type}</td>
+                    <td>{r.max_laying_days ?? ""}</td>
+                    <td>{r.expiration_date ?? ""}</td>
+                    <td>{r.antibiotic_free == null ? "" : r.antibiotic_free ? "유" : "무"}</td>
+                    <td>{r.haccp == null ? "" : r.haccp ? "유" : "무"}</td>
+                    <td>{r.organic == null ? "" : r.organic ? "유" : "무"}</td>
                   </tr>
                 ))}
               </tbody>
